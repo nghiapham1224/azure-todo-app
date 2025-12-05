@@ -1,2 +1,4 @@
 *.db
+.vscode/
 venv/
+node_modules/
