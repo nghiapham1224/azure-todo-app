@@ -5,6 +5,8 @@ terraform {
       version = "~> 3.0"
     }
   }
+  # This backend block tells Terraform where to store its state file
+  backend "azurerm" {}
 }
 
 provider "azurerm" {

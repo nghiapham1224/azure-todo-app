@@ -15,7 +15,7 @@ resource "random_id" "unique" {
 
 # Storage Account (Required by Function app)
 resource "azurerm_storage_account" "sa" {
-  name                     = "st${replace(var.prefix, "-", "")}${var.environment}${random_id.unique.hex}"
+  name                     = "sa${replace(var.prefix, "-", "")}${var.environment}${random_id.unique.hex}"
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = azurerm_resource_group.rg.location
   account_tier             = "Standard"
@@ -28,7 +28,7 @@ resource "azurerm_service_plan" "plan" {
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   os_type             = "Linux"
-  sku_name            = "B1" # Basic plan, to bypass quota limitations
+  sku_name            = "FC1"
 
 }
 

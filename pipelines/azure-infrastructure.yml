@@ -1,3 +1,5 @@
+trigger: none # This pipeline should only be run manually
+
 pool:
   vmImage: "ubuntu-latest"
 
@@ -6,7 +8,7 @@ variables:
   tf_backend_resource_group: "rg-terraform-state"
   tf_backend_storage_account: "tfstate12072025"
   tf_backend_container: "tfstate"
-  tf_backend_key: "todo-app.tfstate"
+  tf_backend_key: "todo.tfstate"
 
   # --- Service Connection ---
   serviceConnection: "sp-deploy"
