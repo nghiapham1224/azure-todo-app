@@ -10,7 +10,7 @@ resource "random_id" "unique" {
 # --- Key Vault for SQL Password ---
 data "azurerm_key_vault" "kv" {
   name                = "kv-terraform20251207" # Hardcoded name from your ID
-  resource_group_name = "rg-terraform-state" # Hardcoded RG from your ID
+  resource_group_name = "rg-terraform-state"   # Hardcoded RG from your ID
 }
 
 data "azurerm_key_vault_secret" "sql_password" {
@@ -89,7 +89,7 @@ resource "azurerm_mssql_server" "sql" {
   version                      = "12.0"
   administrator_login          = "sqladmin"
   administrator_login_password = data.azurerm_key_vault_secret.sql_password.value # Use secret from Key Vault
-  
+
   # Disable Public Access (Security Best Practice)
   public_network_access_enabled = false
 
@@ -149,7 +149,7 @@ resource "azurerm_linux_function_app" "func" {
   service_plan_id            = azurerm_service_plan.plan.id
   storage_account_name       = azurerm_storage_account.sa.name
   storage_account_access_key = azurerm_storage_account.sa.primary_access_key
-  
+
   # VNet Integration
   virtual_network_subnet_id = azurerm_subnet.snet_func.id
 
@@ -160,10 +160,18 @@ resource "azurerm_linux_function_app" "func" {
 
   site_config {
     application_stack {
-      python_version = "3.10"
+      python_version = "3.13"
     }
     cors {
       allowed_origins = ["*"] # Will be restricted by Pipeline script later
+    }
+  }
+
+  # Added based on API error requirement
+  function_app_config {
+    runtime {
+      name    = "python"
+      version = "3.13"
     }
   }
 
@@ -172,7 +180,7 @@ resource "azurerm_linux_function_app" "func" {
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.appinsights.instrumentation_key
     "AzureWebJobsStorage"            = azurerm_storage_account.sa.primary_connection_string
     # Connection String with Managed Identity
-    "MSSQL_CONNECTION_STRING"        = "Driver={ODBC Driver 18 for SQL Server};Server=${azurerm_mssql_server.sql.fully_qualified_domain_name};Database=${azurerm_mssql_database.db.name};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+    "MSSQL_CONNECTION_STRING" = "Driver={ODBC Driver 18 for SQL Server};Server=${azurerm_mssql_server.sql.fully_qualified_domain_name};Database=${azurerm_mssql_database.db.name};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
   }
 }
 
