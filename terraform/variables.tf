@@ -1,7 +1,7 @@
 variable "prefix" {
   description = "A unique prefix for all resources"
   type        = string
-  default     = "todo-app"
+  default     = "todo"
 }
 
 variable "environment" {
@@ -13,7 +13,7 @@ variable "environment" {
 variable "location" {
   description = "Azure region"
   type        = string
-  default     = "eastus"
+  default     = "eastus2"
 }
 
 variable "sql_admin_password" {
