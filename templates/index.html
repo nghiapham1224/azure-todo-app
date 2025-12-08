@@ -129,7 +129,12 @@
         </div>
 
         <script>
-            const API_URL = "http://localhost:7071/api/todos";
+            // Placeholder: The CI/CD pipeline will replace '__BACKEND_API_URL__' with the real Azure URL.
+            // If running locally, it remains '__BACKEND_API_URL__', so we fallback to localhost.
+            let API_URL = "__BACKEND_API_URL__";
+            if (API_URL === "__BACKEND_API_URL__") {
+                API_URL = "http://localhost:7071/api/todos";
+            }
 
             async function loadTodos() {
                 const response = await fetch(API_URL);
