@@ -10,6 +10,10 @@ terraform {
     }
   }
   backend "azurerm" {
+    container_name       = "tfstate"
+    key                  = "todo-dev.tfstate"
+    storage_account_name = "tfstate12072025"
+    use_azuread_auth     = true
     # Will be configured by pipeline
   }
 }

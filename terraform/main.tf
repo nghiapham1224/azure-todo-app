@@ -134,6 +134,12 @@ resource "azurerm_storage_account" "sa" {
   account_replication_type = "LRS"
 }
 
+resource "azurerm_storage_container" "deploy" {
+  name                  = "deployment-package"
+  storage_account_id    = azurerm_storage_account.sa.id
+  container_access_type = "private"
+}
+
 resource "azurerm_service_plan" "plan" {
   name                = "asp-${var.prefix}-${var.environment}"
   resource_group_name = azurerm_resource_group.rg.name
@@ -142,13 +148,19 @@ resource "azurerm_service_plan" "plan" {
   sku_name            = "FC1" # Flex Consumption
 }
 
-resource "azurerm_linux_function_app" "func" {
-  name                       = "func-${var.prefix}-${var.environment}-${random_id.unique.hex}"
-  resource_group_name        = azurerm_resource_group.rg.name
-  location                   = azurerm_resource_group.rg.location
-  service_plan_id            = azurerm_service_plan.plan.id
-  storage_account_name       = azurerm_storage_account.sa.name
-  storage_account_access_key = azurerm_storage_account.sa.primary_access_key
+resource "azurerm_function_app_flex_consumption" "func" {
+  name                = "func-${var.prefix}-${var.environment}-${random_id.unique.hex}"
+  resource_group_name = azurerm_resource_group.rg.name
+  location            = azurerm_resource_group.rg.location
+  service_plan_id     = azurerm_service_plan.plan.id
+
+  storage_container_type      = "blobContainer"
+  storage_container_endpoint  = "${azurerm_storage_account.sa.primary_blob_endpoint}${azurerm_storage_container.deploy.name}"
+  storage_authentication_type = "StorageAccountConnectionString"
+  storage_access_key          = azurerm_storage_account.sa.primary_access_key
+
+  runtime_name    = "python"
+  runtime_version = "3.13"
 
   # VNet Integration
   virtual_network_subnet_id = azurerm_subnet.snet_func.id
@@ -159,24 +171,12 @@ resource "azurerm_linux_function_app" "func" {
   }
 
   site_config {
-    application_stack {
-      python_version = "3.13"
-    }
     cors {
       allowed_origins = ["*"] # Will be restricted by Pipeline script later
     }
   }
 
-  # Added based on API error requirement
-  function_app_config {
-    runtime {
-      name    = "python"
-      version = "3.13"
-    }
-  }
-
   app_settings = {
-    "FUNCTIONS_WORKER_RUNTIME"       = "python"
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.appinsights.instrumentation_key
     "AzureWebJobsStorage"            = azurerm_storage_account.sa.primary_connection_string
     # Connection String with Managed Identity
