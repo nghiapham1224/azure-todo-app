@@ -4,9 +4,14 @@ terraform {
       source  = "hashicorp/azurerm"
       version = "~> 3.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.0"
+    }
   }
-  # This backend block tells Terraform where to store its state file
-  backend "azurerm" {}
+  backend "azurerm" {
+    # Will be configured by pipeline
+  }
 }
 
 provider "azurerm" {

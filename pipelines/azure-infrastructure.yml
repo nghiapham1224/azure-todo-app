@@ -1,16 +1,16 @@
-trigger: none # This pipeline should only be run manually
+trigger: none
 
 pool:
   vmImage: "ubuntu-latest"
 
 variables:
-  # --- Terraform State Backend Configuration ---
+  # Backend Config (Should be passed as variables or defined here if static)
+  # Ensure you create this Storage Account manually before running!
   tf_backend_resource_group: "rg-terraform-state"
   tf_backend_storage_account: "tfstate12072025"
   tf_backend_container: "tfstate"
-  tf_backend_key: "todo.tfstate"
+  tf_backend_key: "todo-dev.tfstate"
 
-  # --- Service Connection ---
   serviceConnection: "sp-deploy"
 
 stages:
@@ -44,7 +44,7 @@ stages:
               command: "plan"
               workingDirectory: "$(System.DefaultWorkingDirectory)/terraform"
               environmentServiceNameAzureRM: $(serviceConnection)
-              commandOptions: '-var="sql_admin_password=$(SQL_PASSWORD)"'
+              # sql_admin_password is now fetched from Key Vault by Terraform itself
 
           - task: TerraformTaskV4@4
             displayName: "Terraform Apply"
@@ -52,5 +52,6 @@ stages:
               provider: "azurerm"
               command: "apply"
               workingDirectory: "$(System.DefaultWorkingDirectory)/terraform"
-              commandOptions: '-var="sql_admin_password=$(SQL_PASSWORD)" -auto-approve'
+              commandOptions: '-auto-approve'
               environmentServiceNameAzureRM: $(serviceConnection)
+              # sql_admin_password is now fetched from Key Vault by Terraform itself

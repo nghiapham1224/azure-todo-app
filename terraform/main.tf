@@ -1,19 +1,131 @@
-# Resource Group
 resource "azurerm_resource_group" "rg" {
   name     = "rg-${var.prefix}-${var.environment}"
   location = var.location
-  tags = {
-    environment = var.environment
-    project     = var.prefix
-  }
 }
 
-# Random ID (for globally unique names like storage)
 resource "random_id" "unique" {
   byte_length = 4
 }
 
-# Storage Account (Required by Function app)
+# --- Key Vault for SQL Password ---
+data "azurerm_key_vault" "kv" {
+  name                = "kv-terraform20251207" # Hardcoded name from your ID
+  resource_group_name = "rg-terraform-state" # Hardcoded RG from your ID
+}
+
+data "azurerm_key_vault_secret" "sql_password" {
+  name         = "sql-password"
+  key_vault_id = data.azurerm_key_vault.kv.id
+}
+
+
+# --- Networking ---
+resource "azurerm_virtual_network" "vnet" {
+  name                = "vnet-${var.prefix}-${var.environment}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  address_space       = ["10.0.0.0/16"]
+}
+
+# Subnet for Function App (Delegated)
+resource "azurerm_subnet" "snet_func" {
+  name                 = "snet-func"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.0.1.0/24"]
+
+  delegation {
+    name = "delegation"
+    service_delegation {
+      name    = "Microsoft.Web/serverFarms"
+      actions = ["Microsoft.Network/virtualNetworks/subnets/action"]
+    }
+  }
+}
+
+# Subnet for Private Endpoints (SQL)
+resource "azurerm_subnet" "snet_private" {
+  name                 = "snet-private"
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.0.2.0/24"]
+}
+
+# Private DNS Zone for SQL
+resource "azurerm_private_dns_zone" "dns_sql" {
+  name                = "privatelink.database.windows.net"
+  resource_group_name = azurerm_resource_group.rg.name
+}
+
+resource "azurerm_private_dns_zone_virtual_network_link" "dns_link" {
+  name                  = "link-to-vnet"
+  resource_group_name   = azurerm_resource_group.rg.name
+  private_dns_zone_name = azurerm_private_dns_zone.dns_sql.name
+  virtual_network_id    = azurerm_virtual_network.vnet.id
+}
+
+# --- Monitoring ---
+resource "azurerm_log_analytics_workspace" "law" {
+  name                = "law-${var.prefix}-${var.environment}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  sku                 = "PerGB2018"
+  retention_in_days   = 30
+}
+
+resource "azurerm_application_insights" "appinsights" {
+  name                = "insight-${var.prefix}-${var.environment}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  workspace_id        = azurerm_log_analytics_workspace.law.id
+  application_type    = "web"
+}
+
+# --- Database ---
+resource "azurerm_mssql_server" "sql" {
+  name                         = "sql-${var.prefix}-${var.environment}-${random_id.unique.hex}"
+  resource_group_name          = azurerm_resource_group.rg.name
+  location                     = azurerm_resource_group.rg.location
+  version                      = "12.0"
+  administrator_login          = "sqladmin"
+  administrator_login_password = data.azurerm_key_vault_secret.sql_password.value # Use secret from Key Vault
+  
+  # Disable Public Access (Security Best Practice)
+  public_network_access_enabled = false
+
+  azuread_administrator {
+    login_username = "AzureADAdmin"
+    object_id      = var.aad_admin_object_id
+  }
+}
+
+resource "azurerm_mssql_database" "db" {
+  name      = "TodoDB"
+  server_id = azurerm_mssql_server.sql.id
+  sku_name  = "Basic"
+}
+
+# Private Endpoint for SQL
+resource "azurerm_private_endpoint" "pe_sql" {
+  name                = "pe-sql-${var.prefix}-${var.environment}"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+  subnet_id           = azurerm_subnet.snet_private.id
+
+  private_service_connection {
+    name                           = "psc-sql"
+    private_connection_resource_id = azurerm_mssql_server.sql.id
+    subresource_names              = ["sqlServer"]
+    is_manual_connection           = false
+  }
+
+  private_dns_zone_group {
+    name                 = "default"
+    private_dns_zone_ids = [azurerm_private_dns_zone.dns_sql.id]
+  }
+}
+
+# --- Compute (Function App) ---
 resource "azurerm_storage_account" "sa" {
   name                     = "sa${replace(var.prefix, "-", "")}${var.environment}${random_id.unique.hex}"
   resource_group_name      = azurerm_resource_group.rg.name
@@ -22,69 +134,53 @@ resource "azurerm_storage_account" "sa" {
   account_replication_type = "LRS"
 }
 
-# App Service Plan (Serverless Consumption Plan)
 resource "azurerm_service_plan" "plan" {
   name                = "asp-${var.prefix}-${var.environment}"
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   os_type             = "Linux"
-  sku_name            = "FC1"
-
+  sku_name            = "FC1" # Flex Consumption
 }
 
-# Azure Function App (Linux / Python)
 resource "azurerm_linux_function_app" "func" {
-  name                       = "func-${var.prefix}-${var.environment}"
+  name                       = "func-${var.prefix}-${var.environment}-${random_id.unique.hex}"
   resource_group_name        = azurerm_resource_group.rg.name
   location                   = azurerm_resource_group.rg.location
   service_plan_id            = azurerm_service_plan.plan.id
   storage_account_name       = azurerm_storage_account.sa.name
   storage_account_access_key = azurerm_storage_account.sa.primary_access_key
+  
+  # VNet Integration
+  virtual_network_subnet_id = azurerm_subnet.snet_func.id
+
+  # Managed Identity
+  identity {
+    type = "SystemAssigned"
+  }
+
   site_config {
     application_stack {
-      python_version = "3.12"
+      python_version = "3.10"
     }
     cors {
-      allowed_origins = ["*"] # Allow all for now (dev), restricted in prod
+      allowed_origins = ["*"] # Will be restricted by Pipeline script later
     }
   }
+
   app_settings = {
-    FUNCTIONS_WORKER_RUNTIME = "python"
-    MSSQL_CONNECTION_STRING  = "Driver={ODBC Driver 18 for SQL Server};Server=tcp:${azurerm_mssql_server.sql.fully_qualified_domain_name},1433;Database=${azurerm_mssql_database.db.name};Uid=${azurerm_mssql_server.sql.administrator_login};Pwd=${azurerm_mssql_server.sql.administrator_login_password};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+    "FUNCTIONS_WORKER_RUNTIME"       = "python"
+    "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.appinsights.instrumentation_key
+    "AzureWebJobsStorage"            = azurerm_storage_account.sa.primary_connection_string
+    # Connection String with Managed Identity
+    "MSSQL_CONNECTION_STRING"        = "Driver={ODBC Driver 18 for SQL Server};Server=${azurerm_mssql_server.sql.fully_qualified_domain_name};Database=${azurerm_mssql_database.db.name};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
   }
 }
 
-# SQL Server
-resource "azurerm_mssql_server" "sql" {
-  name                         = "sql-${var.prefix}-${var.environment}-${random_id.unique.hex}"
-  resource_group_name          = azurerm_resource_group.rg.name
-  location                     = azurerm_resource_group.rg.location
-  version                      = "12.0"
-  administrator_login          = "sqladmin"
-  administrator_login_password = var.sql_admin_password # Sourced securely from variable
-}
-
-# SQL Database
-resource "azurerm_mssql_database" "db" {
-  name      = "TodoDB"
-  server_id = azurerm_mssql_server.sql.id
-  sku_name  = "Basic"
-}
-
-# Firewall Rule (Allow Azure Services)
-# Essential for the Function App to reach the SQL DB
-resource "azurerm_mssql_firewall_rule" "allow_azure_ips" {
-  name             = "AllowAzureServices"
-  server_id        = azurerm_mssql_server.sql.id
-  start_ip_address = "0.0.0.0"
-  end_ip_address   = "0.0.0.0"
-}
-
-# Static Web App (Frontend)
+# --- Frontend (Static Web App) ---
 resource "azurerm_static_web_app" "frontend" {
-  name                = "swa-${var.prefix}-${var.environment}-${random_id.unique.hex}"
+  name                = "swa-${var.prefix}-${var.environment}"
   resource_group_name = azurerm_resource_group.rg.name
-  location            = "eastus2" # Static Web Apps have limited region availability, 'eastus2' is a safe bet
-  sku_tier            = "Standard"
-  sku_size            = "Standard"
+  location            = "eastus2"
+  sku_tier            = "Free"
+  sku_size            = "Free"
 }

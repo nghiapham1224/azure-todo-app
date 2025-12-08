@@ -1,0 +1,15 @@
+.git
+.vscode
+venv
+__pycache__
+local.settings.json
+test
+tests
+spec
+node_modules
+pipelines
+terraform
+templates
+.terraform
+*.md
+.gitignore
