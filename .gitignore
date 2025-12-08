@@ -3,3 +3,7 @@
 venv/
 node_modules/
 __pycache__/
+
+# Terraform generated files
+.terraform/
+.terraform.lock.hcl
