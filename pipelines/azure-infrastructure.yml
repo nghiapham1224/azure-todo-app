@@ -1,12 +1,3 @@
-trigger:
-  branches:
-    include:
-      - dev
-  paths:
-    include:
-      - terraform/**
-      - pipelines/azure-infrastructure.yml
-
 pool:
   vmImage: "ubuntu-latest"
 
