@@ -78,6 +78,8 @@ stages:
               scriptType: "bash"
               scriptLocation: "inlineScript"
               inlineScript: |
+                set -e # Fail on error
+
                 # 1. Get Resource Names
                 echo "Looking for resources..."
                 FUNC_NAME=$(az functionapp list -g rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'func-$(projectPrefix)-$(environment)')].name | [0]" -o tsv)
@@ -85,52 +87,46 @@ stages:
 
                 echo "Found Function: $FUNC_NAME"
                 echo "Found Storage: $STORAGE_NAME"
-
-                # Set variable for next steps
                 echo "##vso[task.setvariable variable=funcAppName]$FUNC_NAME"
 
-                # 2. Get Storage Key & Connection String (CRITICAL FIX)
-                echo "Getting Storage Keys..."
-                STORAGE_KEY=$(az storage account keys list -g rg-$(projectPrefix)-$(environment) -n $STORAGE_NAME --query "[0].value" -o tsv)
+                # 2. Upload Zip (RBAC Auth)
+                ZIP_PATH="$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip"
+                echo "Uploading zip: $ZIP_PATH"
 
-                # Construct connection string manually
-                CONN_STRING="DefaultEndpointsProtocol=https;AccountName=$STORAGE_NAME;AccountKey=$STORAGE_KEY;EndpointSuffix=core.windows.net"
-
-                # 3. Upload Zip
-                echo "Uploading zip to container 'deployment-package'..."
                 az storage blob upload \
                   --account-name $STORAGE_NAME \
-                  --account-key $STORAGE_KEY \
                   --container-name deployment-package \
                   --name "$(Build.BuildId).zip" \
-                  --file "$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip" \
+                  --file "$ZIP_PATH" \
+                  --auth-mode login \
                   --overwrite
 
-                # 4. Generate SAS URL
-                # Flex Consumption needs a SAS token if not using Managed Identity
-                END_DATE=$(date -u -d "60 minutes" '+%Y-%m-%dT%H:%MZ')
-                SAS_TOKEN=$(az storage blob generate-sas \
+                # 3. Generate SAS Token (RBAC Auth)
+                # Valid for 2 hours, using User Delegation Key (secure)
+                END_DATE=$(date -u -d "120 minutes" '+%Y-%m-%dT%H:%MZ')
+
+                BLOB_URL=$(az storage blob generate-sas \
                   --account-name $STORAGE_NAME \
-                  --account-key $STORAGE_KEY \
                   --container-name deployment-package \
                   --name "$(Build.BuildId).zip" \
                   --permissions r \
                   --expiry $END_DATE \
+                  --auth-mode login \
+                  --as-user \
+                  --full-uri \
                   -o tsv)
 
-                # Construct the full signed URL
-                BLOB_URL="https://$STORAGE_NAME.blob.core.windows.net/deployment-package/$(Build.BuildId).zip?$SAS_TOKEN"
+                echo "Generated SAS URL"
 
-                # 5. Apply Settings (FIXED)
-                echo "Updating App Settings..."
+                # 4. Update App Settings
+                echo "Updating WEBSITE_RUN_FROM_PACKAGE..."
 
-                # Set both Connection String AND Package URL
                 az functionapp config appsettings set \
                   --resource-group rg-$(projectPrefix)-$(environment) \
                   --name $FUNC_NAME \
-                  --settings "DEPLOYMENT_STORAGE_CONNECTION_STRING=$CONN_STRING" "WEBSITE_RUN_FROM_PACKAGE=$BLOB_URL"
+                  --settings WEBSITE_RUN_FROM_PACKAGE="$BLOB_URL"
 
-          # 6. Health Check (Retry Loop)
+          # 5. Health Check (Retry Loop)
           - script: |
               MAX_RETRIES=20
               WAIT_TIME=10
