@@ -45,7 +45,6 @@ stages:
               command: "plan"
               workingDirectory: "$(System.DefaultWorkingDirectory)/terraform"
               environmentServiceNameAzureRM: $(serviceConnection)
-              # sql_admin_password is now fetched from Key Vault by Terraform itself
 
           - task: TerraformTaskV4@4
             displayName: "Terraform Apply"
@@ -55,4 +54,3 @@ stages:
               workingDirectory: "$(System.DefaultWorkingDirectory)/terraform"
               commandOptions: "-auto-approve"
               environmentServiceNameAzureRM: $(serviceConnection)
-              # sql_admin_password is now fetched from Key Vault by Terraform itself
