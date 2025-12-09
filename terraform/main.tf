@@ -184,6 +184,13 @@ resource "azurerm_function_app_flex_consumption" "func" {
   }
 }
 
+# Grant Function App access to Storage Blob Data (for deployment & runtime)
+resource "azurerm_role_assignment" "func_storage_blob_owner" {
+  scope                = azurerm_storage_account.sa.id
+  role_definition_name = "Storage Blob Data Owner"
+  principal_id         = azurerm_function_app_flex_consumption.func.identity[0].principal_id
+}
+
 # --- Frontend (Static Web App) ---
 resource "azurerm_static_web_app" "frontend" {
   name                = "swa-${var.prefix}-${var.environment}"

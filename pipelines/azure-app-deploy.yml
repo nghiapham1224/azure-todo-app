@@ -101,25 +101,10 @@ stages:
                   --auth-mode login \
                   --overwrite
 
-                # 3. Generate SAS Token (RBAC Auth)
-                # Valid for 2 hours, using User Delegation Key (secure)
-                END_DATE=$(date -u -d "120 minutes" '+%Y-%m-%dT%H:%MZ')
-
-                BLOB_URL=$(az storage blob generate-sas \
-                  --account-name $STORAGE_NAME \
-                  --container-name deployment-package \
-                  --name "$(Build.BuildId).zip" \
-                  --permissions r \
-                  --expiry $END_DATE \
-                  --auth-mode login \
-                  --as-user \
-                  --full-uri \
-                  -o tsv)
-
-                echo "Generated SAS URL"
-
-                # 4. Update App Settings
-                echo "Updating WEBSITE_RUN_FROM_PACKAGE..."
+                # 3. Update App Settings (Managed Identity)
+                # Function App has 'Storage Blob Data Owner' via Terraform, so plain URL works
+                BLOB_URL="https://$STORAGE_NAME.blob.core.windows.net/deployment-package/$(Build.BuildId).zip"
+                echo "Setting WEBSITE_RUN_FROM_PACKAGE to: $BLOB_URL"
 
                 az functionapp config appsettings set \
                   --resource-group rg-$(projectPrefix)-$(environment) \
