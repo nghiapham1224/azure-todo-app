@@ -10,3 +10,7 @@ output "static_web_app_deployment_token" {
   value     = azurerm_static_web_app.frontend.api_key
   sensitive = true
 }
+
+output "storage_account_name" {
+  value = azurerm_storage_account.sa.name
+}

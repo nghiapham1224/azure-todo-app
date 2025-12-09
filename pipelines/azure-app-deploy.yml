@@ -79,13 +79,37 @@ stages:
                 echo "Found Function App: $FUNC_NAME"
                 echo "##vso[task.setvariable variable=funcAppName]$FUNC_NAME"
 
-          - task: AzureFunctionApp@1
-            displayName: "Deploy Function App"
+          # Custom Deployment for VNet-Integrated Flex Consumption
+          - task: AzureCLI@2
+            displayName: "Deploy to Storage & Configure App"
             inputs:
               azureSubscription: "$(serviceConnection)"
-              appType: "functionAppLinux"
-              appName: "$(funcAppName)"
-              package: "$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip"
+              scriptType: "bash"
+              scriptLocation: "inlineScript"
+              inlineScript: |
+                # 1. Get Storage Account Name
+                STORAGE_NAME=$(az storage account list --resource-group rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'sa$(projectPrefix)$(environment)')].name | [0]" -o tsv)
+                echo "Found Storage Account: $STORAGE_NAME"
+
+                # 2. Upload Zip to 'deployment-package' container
+                echo "Uploading artifact to Blob Storage..."
+                az storage blob upload \
+                  --account-name $STORAGE_NAME \
+                  --container-name deployment-package \
+                  --name "$(Build.BuildId).zip" \
+                  --file "$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip" \
+                  --auth-mode login
+
+                # 3. Construct Blob URL
+                BLOB_URL="https://$STORAGE_NAME.blob.core.windows.net/deployment-package/$(Build.BuildId).zip"
+                echo "Blob URL: $BLOB_URL"
+
+                # 4. Update Function App Setting (WEBSITE_RUN_FROM_PACKAGE)
+                echo "Updating Function App to run from package..."
+                az functionapp config appsettings set \
+                  --resource-group rg-$(projectPrefix)-$(environment) \
+                  --name $(funcAppName) \
+                  --settings "WEBSITE_RUN_FROM_PACKAGE=$BLOB_URL"
 
           # --- SMOKE TEST & DB INIT ---
           # This step calls the API, which triggers the 'init_db()' function in the code.
