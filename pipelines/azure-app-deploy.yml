@@ -12,12 +12,9 @@ pool:
   vmImage: "ubuntu-latest"
 
 variables:
-  # --- Project Variables ---
   projectPrefix: "todo"
   environment: "dev"
   pythonVersion: "3.13"
-
-  # --- Service Connection ---
   serviceConnection: "sp-deploy"
 
 stages:
@@ -31,7 +28,6 @@ stages:
         displayName: "Build Python App"
         steps:
           - task: UsePythonVersion@0
-            displayName: "Use Python $(pythonVersion)"
             inputs:
               versionSpec: $(pythonVersion)
 
@@ -42,7 +38,6 @@ stages:
             displayName: "Install Dependencies"
 
           - task: ArchiveFiles@2
-            displayName: "Archive files"
             inputs:
               rootFolderOrFile: $(System.DefaultWorkingDirectory)
               includeRootFolder: false
@@ -57,7 +52,7 @@ stages:
               publishLocation: "Container"
 
       # =========================================================
-      # JOB 2: DEPLOY BACKEND (FUNCTION APP)
+      # JOB 2: DEPLOY BACKEND
       # =========================================================
       - job: DeployBackend
         displayName: "Deploy Function App"
@@ -70,83 +65,82 @@ stages:
               artifactName: "drop"
               downloadPath: $(System.ArtifactsDirectory)
 
-          # 1. Get Function App Name
           - task: AzureCLI@2
-            displayName: "Get Function App Name"
+            displayName: "Deploy Backend Code"
             inputs:
               azureSubscription: "$(serviceConnection)"
               scriptType: "bash"
               scriptLocation: "inlineScript"
               inlineScript: |
-                FUNC_NAME=$(az functionapp list --resource-group rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'func-$(projectPrefix)-$(environment)')].name | [0]" -o tsv)
-                echo "Found Function App: $FUNC_NAME"
+                # 1. Get Resource Names
+                echo "Looking for resources..."
+                FUNC_NAME=$(az functionapp list -g rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'func-$(projectPrefix)-$(environment)')].name | [0]" -o tsv)
+                STORAGE_NAME=$(az storage account list -g rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'sa$(projectPrefix)$(environment)')].name | [0]" -o tsv)
+
+                echo "Found Function: $FUNC_NAME"
+                echo "Found Storage: $STORAGE_NAME"
+
+                # Set variable for next steps
                 echo "##vso[task.setvariable variable=funcAppName]$FUNC_NAME"
 
-          # 2. Deploy to Storage & Configure App (FIXED: Uses Account Key)
-          - task: AzureCLI@2
-            displayName: "Deploy to Storage & Configure App"
-            inputs:
-              azureSubscription: "$(serviceConnection)"
-              scriptType: "bash"
-              scriptLocation: "inlineScript"
-              inlineScript: |
-                # Get Storage Account Name
-                STORAGE_NAME=$(az storage account list --resource-group rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'sa$(projectPrefix)$(environment)')].name | [0]" -o tsv)
-                echo "Found Storage Account: $STORAGE_NAME"
+                # 2. Upload Zip
+                echo "Getting Storage Key..."
+                STORAGE_KEY=$(az storage account keys list -g rg-$(projectPrefix)-$(environment) -n $STORAGE_NAME --query "[0].value" -o tsv)
 
-                # Get Storage Key (Bypasses RBAC Data Role issues)
-                STORAGE_KEY=$(az storage account keys list --resource-group rg-$(projectPrefix)-$(environment) --account-name $STORAGE_NAME --query "[0].value" -o tsv)
-
-                # Upload Zip
-                echo "Uploading artifact to Blob Storage..."
+                echo "Uploading zip to container 'deployment-package'..."
                 az storage blob upload \
                   --account-name $STORAGE_NAME \
                   --account-key $STORAGE_KEY \
                   --container-name deployment-package \
                   --name "$(Build.BuildId).zip" \
-                  --file "$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip"
+                  --file "$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip" \
+                  --overwrite
 
-                # Construct Blob URL
-                BLOB_URL="https://$STORAGE_NAME.blob.core.windows.net/deployment-package/$(Build.BuildId).zip"
-                echo "Blob URL: $BLOB_URL"
+                # 3. Generate SAS Token (Valid for 1 hour) for secure access or use Public URL if container is public
+                # Using a SAS token is safer and ensures the Function can read it even if the container is private.
+                END_DATE=$(date -u -d "60 minutes" '+%Y-%m-%dT%H:%MZ')
+                SAS_TOKEN=$(az storage blob generate-sas \
+                  --account-name $STORAGE_NAME \
+                  --account-key $STORAGE_KEY \
+                  --container-name deployment-package \
+                  --name "$(Build.BuildId).zip" \
+                  --permissions r \
+                  --expiry $END_DATE \
+                  -o tsv)
 
-                # Update Function App Setting
-                echo "Updating Function App to run from package..."
+                BLOB_URL="https://$STORAGE_NAME.blob.core.windows.net/deployment-package/$(Build.BuildId).zip?$SAS_TOKEN"
+
+                # 4. Apply Settings
+                echo "Updating WEBSITE_RUN_FROM_PACKAGE..."
+
+                # We use specific quoting here to ensure the shell doesn't break the URL
                 az functionapp config appsettings set \
                   --resource-group rg-$(projectPrefix)-$(environment) \
-                  --name $(funcAppName) \
-                  --settings "WEBSITE_RUN_FROM_PACKAGE=$BLOB_URL"
+                  --name $FUNC_NAME \
+                  --settings "WEBSITE_RUN_FROM_PACKAGE=$BLOB_URL" "SCM_DO_BUILD_DURING_DEPLOYMENT=false"
 
-          # 3. Smoke Test (FIXED: Uses Retry Loop)
           - script: |
-              MAX_RETRIES=12
+              MAX_RETRIES=20
               WAIT_TIME=10
               ATTEMPTS=0
               FUNC_URL="https://$(funcAppName).azurewebsites.net/api/health"
 
-              echo "Waiting for app to start and respond (Max $((MAX_RETRIES * WAIT_TIME))s)..."
-
+              echo "Waiting for app to start..."
               while [ $ATTEMPTS -lt $MAX_RETRIES ]; do
                 sleep $WAIT_TIME
-                # Check HTTP Status Code
                 RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $FUNC_URL)
-                echo "Attempt $((ATTEMPTS + 1))/$MAX_RETRIES: Health Check Response: $RESPONSE"
-
+                echo "Attempt $((ATTEMPTS+1)): $RESPONSE"
                 if [ "$RESPONSE" -eq "200" ]; then
-                  echo "App is healthy and DB init triggered."
+                  echo "Success!"
                   exit 0
                 fi
-
-                ATTEMPTS=$((ATTEMPTS + 1))
+                ATTEMPTS=$((ATTEMPTS+1))
               done
-
-              echo "##vso[task.logissue type=warning]Warning: Function App did not become healthy after $((MAX_RETRIES * WAIT_TIME)) seconds."
-              # We do not exit 1 here to allow the pipeline to proceed to Frontend deployment if desired,
-              # but usually, you might want to fail here.
-            displayName: "Trigger DB Initialization (Retry Loop)"
+              echo "##vso[task.logissue type=warning]App failed to start."
+            displayName: "Health Check"
 
       # =========================================================
-      # JOB 3: DEPLOY FRONTEND (STATIC WEB APP)
+      # JOB 3: DEPLOY FRONTEND
       # =========================================================
       - job: DeployFrontend
         displayName: "Deploy Frontend"
@@ -154,39 +148,37 @@ stages:
         steps:
           - checkout: self
 
-          # 1. Get Secrets from Key Vault
-          - task: AzureKeyVault@2
-            displayName: "Get Secrets from Key Vault"
-            inputs:
-              azureSubscription: "$(serviceConnection)"
-              KeyVaultName: "kv-terraform20251207" # Ensure this matches your actual KV name
-              SecretsFilter: "swa-token-$(projectPrefix)-$(environment)"
-              RunAsPreJob: false
-
-          # 2. Get Function App Name (Needed for URL injection)
           - task: AzureCLI@2
-            displayName: "Get Function App Name"
+            displayName: "Configure & Get Secrets"
             inputs:
               azureSubscription: "$(serviceConnection)"
               scriptType: "bash"
               scriptLocation: "inlineScript"
               inlineScript: |
-                FUNC_NAME=$(az functionapp list --resource-group rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'func-$(projectPrefix)-$(environment)')].name | [0]" -o tsv)
-                echo "##vso[task.setvariable variable=funcAppName]$FUNC_NAME"
+                # 1. Get Function Name
+                FUNC_NAME=$(az functionapp list -g rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'func-$(projectPrefix)-$(environment)')].name | [0]" -o tsv)
+                FULL_API_URL="https://$FUNC_NAME.azurewebsites.net/api/todos"
 
-          # 3. Inject Backend URL into index.html
-          - script: |
-              FULL_API_URL="https://$(funcAppName).azurewebsites.net/api/todos"
-              echo "Injecting Backend URL: $FULL_API_URL"
+                # 2. Inject URL
+                echo "Injecting API URL: $FULL_API_URL"
+                sed -i "s|__BACKEND_API_URL__|$FULL_API_URL|g" templates/index.html
 
-              sed -i "s|__BACKEND_API_URL__|$FULL_API_URL|g" templates/index.html
-            displayName: "Configure Frontend Config"
+                # 3. Get SWA Token Manually (Reliable Fallback)
+                echo "Fetching SWA Token..."
+                SWA_NAME=$(az staticwebapp list -g rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'swa-$(projectPrefix)-$(environment)')].name | [0]" -o tsv)
+                TOKEN=$(az staticwebapp secrets list -n $SWA_NAME -g rg-$(projectPrefix)-$(environment) --query "properties.apiKey" -o tsv)
 
-          # 4. Deploy to Static Web App
+                if [ -z "$TOKEN" ]; then
+                  echo "##vso[task.logissue type=error]Failed to retrieve SWA Token!"
+                  exit 1
+                fi
+
+                echo "##vso[task.setvariable variable=swaToken;issecret=true]$TOKEN"
+
           - task: AzureStaticWebApp@0
             displayName: "Deploy Static Content"
             inputs:
               app_location: "/templates"
               api_location: ""
               output_location: ""
-              azure_static_web_apps_api_token: $(swa-token-$(projectPrefix)-$(environment))
+              azure_static_web_apps_api_token: $(swaToken)
