@@ -12,9 +12,12 @@ pool:
   vmImage: "ubuntu-latest"
 
 variables:
+  # --- Project Variables ---
   projectPrefix: "todo"
   environment: "dev"
   pythonVersion: "3.13"
+
+  # --- Service Connection ---
   serviceConnection: "sp-deploy"
 
 stages:
@@ -28,6 +31,7 @@ stages:
         displayName: "Build Python App"
         steps:
           - task: UsePythonVersion@0
+            displayName: "Use Python $(pythonVersion)"
             inputs:
               versionSpec: $(pythonVersion)
 
@@ -37,7 +41,9 @@ stages:
               pip install -r requirements.txt
             displayName: "Install Dependencies"
 
+          # Create a suitable archive for Azure Functions
           - task: ArchiveFiles@2
+            displayName: "Archive files"
             inputs:
               rootFolderOrFile: $(System.DefaultWorkingDirectory)
               includeRootFolder: false
@@ -52,7 +58,7 @@ stages:
               publishLocation: "Container"
 
       # =========================================================
-      # JOB 2: DEPLOY BACKEND
+      # JOB 2: DEPLOY BACKEND (FIXED FOR FLEX CONSUMPTION)
       # =========================================================
       - job: DeployBackend
         displayName: "Deploy Function App"
@@ -83,10 +89,14 @@ stages:
                 # Set variable for next steps
                 echo "##vso[task.setvariable variable=funcAppName]$FUNC_NAME"
 
-                # 2. Upload Zip
-                echo "Getting Storage Key..."
+                # 2. Get Storage Key & Connection String (CRITICAL FIX)
+                echo "Getting Storage Keys..."
                 STORAGE_KEY=$(az storage account keys list -g rg-$(projectPrefix)-$(environment) -n $STORAGE_NAME --query "[0].value" -o tsv)
 
+                # Construct connection string manually
+                CONN_STRING="DefaultEndpointsProtocol=https;AccountName=$STORAGE_NAME;AccountKey=$STORAGE_KEY;EndpointSuffix=core.windows.net"
+
+                # 3. Upload Zip
                 echo "Uploading zip to container 'deployment-package'..."
                 az storage blob upload \
                   --account-name $STORAGE_NAME \
@@ -96,8 +106,8 @@ stages:
                   --file "$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip" \
                   --overwrite
 
-                # 3. Generate SAS Token (Valid for 1 hour) for secure access or use Public URL if container is public
-                # Using a SAS token is safer and ensures the Function can read it even if the container is private.
+                # 4. Generate SAS URL
+                # Flex Consumption needs a SAS token if not using Managed Identity
                 END_DATE=$(date -u -d "60 minutes" '+%Y-%m-%dT%H:%MZ')
                 SAS_TOKEN=$(az storage blob generate-sas \
                   --account-name $STORAGE_NAME \
@@ -108,17 +118,19 @@ stages:
                   --expiry $END_DATE \
                   -o tsv)
 
+                # Construct the full signed URL
                 BLOB_URL="https://$STORAGE_NAME.blob.core.windows.net/deployment-package/$(Build.BuildId).zip?$SAS_TOKEN"
 
-                # 4. Apply Settings
-                echo "Updating WEBSITE_RUN_FROM_PACKAGE..."
+                # 5. Apply Settings (FIXED)
+                echo "Updating App Settings..."
 
-                # We use specific quoting here to ensure the shell doesn't break the URL
+                # Set both Connection String AND Package URL
                 az functionapp config appsettings set \
                   --resource-group rg-$(projectPrefix)-$(environment) \
                   --name $FUNC_NAME \
-                  --settings "WEBSITE_RUN_FROM_PACKAGE=$BLOB_URL" "SCM_DO_BUILD_DURING_DEPLOYMENT=false"
+                  --settings "DEPLOYMENT_STORAGE_CONNECTION_STRING=$CONN_STRING" "WEBSITE_RUN_FROM_PACKAGE=$BLOB_URL"
 
+          # 6. Health Check (Retry Loop)
           - script: |
               MAX_RETRIES=20
               WAIT_TIME=10
@@ -131,12 +143,13 @@ stages:
                 RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $FUNC_URL)
                 echo "Attempt $((ATTEMPTS+1)): $RESPONSE"
                 if [ "$RESPONSE" -eq "200" ]; then
-                  echo "Success!"
+                  echo "Success! App is healthy."
                   exit 0
                 fi
                 ATTEMPTS=$((ATTEMPTS+1))
               done
-              echo "##vso[task.logissue type=warning]App failed to start."
+              echo "##vso[task.logissue type=warning]App failed to start within time limit."
+              exit 1
             displayName: "Health Check"
 
       # =========================================================
