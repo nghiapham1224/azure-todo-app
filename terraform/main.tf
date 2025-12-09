@@ -9,8 +9,8 @@ resource "random_id" "unique" {
 
 # --- Key Vault for SQL Password ---
 data "azurerm_key_vault" "kv" {
-  name                = "kv-terraform20251207" # Hardcoded name from your ID
-  resource_group_name = "rg-terraform-state"   # Hardcoded RG from your ID
+  name                = "kv-terraform20251207"
+  resource_group_name = "rg-terraform-state"
 }
 
 data "azurerm_key_vault_secret" "sql_password" {
@@ -191,4 +191,10 @@ resource "azurerm_static_web_app" "frontend" {
   location            = "eastus2"
   sku_tier            = "Free"
   sku_size            = "Free"
+}
+
+resource "azurerm_key_vault_secret" "swa_token" {
+  name         = "swa-token-${var.prefix}-${var.environment}"
+  value        = azurerm_static_web_app.frontend.api_key
+  key_vault_id = data.azurerm_key_vault.kv.id
 }

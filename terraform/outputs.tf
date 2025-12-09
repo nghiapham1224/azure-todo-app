@@ -1,0 +1,12 @@
+output "function_app_name" {
+  value = azurerm_function_app_flex_consumption.func.name
+}
+
+output "static_web_app_name" {
+  value = azurerm_static_web_app.frontend.name
+}
+
+output "static_web_app_deployment_token" {
+  value     = azurerm_static_web_app.frontend.api_key
+  sensitive = true
+}
