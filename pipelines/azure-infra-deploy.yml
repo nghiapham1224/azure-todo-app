@@ -11,7 +11,7 @@ variables:
   tf_backend_container: "tfstate"
   tf_backend_key: "todo-dev.tfstate"
 
-  serviceConnection: "sp-deploy"
+  serviceConnection: "sp-deploy-student"
 
 stages:
   - stage: Infrastructure
