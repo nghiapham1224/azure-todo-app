@@ -1,12 +1,9 @@
 trigger: none
 
-pool:
-  vmImage: "ubuntu-latest"
-
 variables:
   # Backend Config (Should be passed as variables or defined here if static)
   # Ensure you create this Storage Account manually before running!
-  tf_backend_resource_group: "rg-terraform-state"
+  tf_backend_resource_group: "terraform-state-rg"
   tf_backend_storage_account: "tfstate12072025"
   tf_backend_container: "tfstate"
   tf_backend_key: "todo-dev.tfstate"
@@ -17,8 +14,13 @@ stages:
   - stage: Infrastructure
     displayName: "Deploy Infrastructure"
     jobs:
-      - job: Terraform
-        displayName: "Terraform Apply"
+      # =========================================================
+      # JOB 1: PLAN (runs on agent)
+      # =========================================================
+      - job: TerraformPlan
+        displayName: "Terraform Plan"
+        pool:
+          vmImage: "ubuntu-latest"
         steps:
           - task: TerraformInstaller@1
             displayName: "Install Terraform"
@@ -39,24 +41,81 @@ stages:
               commandOptions: "-upgrade"
 
           - task: TerraformTaskV4@4
-            displayName: "Terraform Plan"
+            displayName: "Terraform Plan (write tfplan file)"
             inputs:
               provider: "azurerm"
               command: "plan"
               workingDirectory: "$(System.DefaultWorkingDirectory)/terraform"
               environmentServiceNameAzureRM: $(serviceConnection)
+              commandOptions: "-out=tfplan-$(Build.BuildId) -input=false"
 
-          - task: ManualValidation@0
-            displayName: "Manual approval before Terraform Apply"
+          # publish the generated plan file so the approval (agentless) + apply job can use it
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish tfplan artifact"
             inputs:
+              targetPath: "$(System.DefaultWorkingDirectory)/terraform/tfplan-$(Build.BuildId)"
+              artifact: "tfplan"
+              publishLocation: "pipeline"
+
+      # =========================================================
+      # JOB 2: AGENTLESS APPROVAL (runs on server/agentless pool)
+      # =========================================================
+      - job: Approval
+        displayName: "Manual approval before Terraform Apply"
+        pool: server
+        dependsOn: TerraformPlan
+        steps:
+          - task: ManualValidation@0
+            displayName: "Approve Terraform Apply"
+            inputs:
+              instructions: |
+                Review the Terraform plan artifact attached to the pipeline run and the plan output
+                in the pipeline logs. Approve to continue to the apply job which will execute the
+                saved plan. Reject to stop the pipeline.
+              timeoutInMinutes: 4320
+              # notifyUsers can be left empty or a comma-separated list of users to notify.
               notifyUsers: ""
-              instructions: "Review the Terraform plan output in the pipeline and approve to continue with Terraform Apply."
+
+      # =========================================================
+      # JOB 3: APPLY (runs on agent; depends on approval)
+      # =========================================================
+      - job: TerraformApply
+        displayName: "Terraform Apply"
+        dependsOn: Approval
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: "Download tfplan artifact"
+            inputs:
+              artifact: "tfplan"
+              path: "$(System.DefaultWorkingDirectory)/terraform"
+
+          - task: TerraformInstaller@1
+            displayName: "Install Terraform"
+            inputs:
+              terraformVersion: "latest"
 
           - task: TerraformTaskV4@4
-            displayName: "Terraform Apply"
+            displayName: "Terraform Init"
+            inputs:
+              provider: "azurerm"
+              command: "init"
+              workingDirectory: "$(System.DefaultWorkingDirectory)/terraform"
+              backendServiceArm: $(serviceConnection)
+              backendAzureRmResourceGroupName: $(tf_backend_resource_group)
+              backendAzureRmStorageAccountName: $(tf_backend_storage_account)
+              backendAzureRmContainerName: $(tf_backend_container)
+              backendAzureRmKey: $(tf_backend_key)
+              commandOptions: "-upgrade"
+
+          - task: TerraformTaskV4@4
+            displayName: "Terraform Apply (use published plan)"
             inputs:
               provider: "azurerm"
               command: "apply"
               workingDirectory: "$(System.DefaultWorkingDirectory)/terraform"
-              commandOptions: "-auto-approve"
+              # Apply the previously created plan file. This avoids interactive prompts
+              # and does not require -auto-approve because apply of a plan file is non-interactive.
+              commandOptions: "tfplan-$(Build.BuildId) -input=false"
               environmentServiceNameAzureRM: $(serviceConnection)
