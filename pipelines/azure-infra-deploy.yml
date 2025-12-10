@@ -46,6 +46,12 @@ stages:
               workingDirectory: "$(System.DefaultWorkingDirectory)/terraform"
               environmentServiceNameAzureRM: $(serviceConnection)
 
+          - task: ManualValidation@0
+            displayName: "Manual approval before Terraform Apply"
+            inputs:
+              notifyUsers: ""
+              instructions: "Review the Terraform plan output in the pipeline and approve to continue with Terraform Apply."
+
           - task: TerraformTaskV4@4
             displayName: "Terraform Apply"
             inputs:

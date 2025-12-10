@@ -12,7 +12,7 @@ terraform {
   backend "azurerm" {
     container_name       = "tfstate"
     key                  = "todo-dev.tfstate"
-    storage_account_name = "tfstate12072025"
+    storage_account_name = "tfstate1756664581"
     use_azuread_auth     = true
     # Will be configured by pipeline
   }
@@ -20,5 +20,5 @@ terraform {
 
 provider "azurerm" {
   features {}
-  subscription_id = "712c5cd3-626a-449d-93bc-d2bd155dc864" # Explicitly set subscription if needed, or rely on env vars
+  subscription_id = "7e3747e0-7e48-4d2a-9ed3-8323092272b8" # Explicitly set subscription if needed, or rely on env vars
 }

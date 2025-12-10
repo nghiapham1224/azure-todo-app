@@ -9,8 +9,8 @@ resource "random_id" "unique" {
 
 # --- Key Vault for SQL Password ---
 data "azurerm_key_vault" "kv" {
-  name                = "kv-terraform20251207"
-  resource_group_name = "rg-terraform-state"
+  name                = "terraform-kv-01"
+  resource_group_name = "terraform-state-rg"
 }
 
 data "azurerm_key_vault_secret" "sql_password" {
