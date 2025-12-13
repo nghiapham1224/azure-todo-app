@@ -72,30 +72,27 @@ stages:
               downloadPath: $(System.ArtifactsDirectory)
 
           - task: AzureCLI@2
-            displayName: "Deploy Backend Code"
+            displayName: "Get Function App Name"
             inputs:
               azureSubscription: "$(serviceConnection)"
               scriptType: "bash"
               scriptLocation: "inlineScript"
               inlineScript: |
                 set -e # Fail on error
-
-                # 1. Get Resource Names
                 echo "Looking for function app..."
                 FUNC_NAME=$(az functionapp list -g rg-$(projectPrefix)-$(environment) --query "[?starts_with(name, 'func-$(projectPrefix)-$(environment)')].name | [0]" -o tsv)
                 echo "Found Function: $FUNC_NAME"
                 echo "##vso[task.setvariable variable=funcAppName]$FUNC_NAME"
 
-                # 2. Path to zip created in build job
-                ZIP_PATH="$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip"
+          - task: AzureFunctionApp@2
+            displayName: "Deploy Backend Code"
+            inputs:
+              connectedServiceNameARM: "$(serviceConnection)"
+              appType: "functionAppLinux"
+              appName: "$(funcAppName)"
+              package: "$(System.ArtifactsDirectory)/drop/$(Build.BuildId).zip"
 
-                # One Deploy using Azure CLI (uploads to the function's deployment container and registers the package)
-                az functionapp deployment source config-zip \
-                  --resource-group rg-$(projectPrefix)-$(environment) \
-                  --name $FUNC_NAME \
-                  --src "$ZIP_PATH"
-
-          # 5. Health Check (Retry Loop)
+          # Health Check (Retry Loop)
           - script: |
               MAX_RETRIES=20
               WAIT_TIME=10
