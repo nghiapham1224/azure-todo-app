@@ -183,6 +183,11 @@ resource "azurerm_function_app_flex_consumption" "func" {
     # Connection String with Managed Identity
     "MSSQL_CONNECTION_STRING" = "Driver={ODBC Driver 18 for SQL Server};Server=${azurerm_mssql_server.sql.fully_qualified_domain_name};Database=${azurerm_mssql_database.db.name};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
   }
+
+  tags = {
+      "hidden-link:${azurerm_application_insights.appinsights.id}" = "Resource"
+      "Name"                                                       = "My Functions App"
+    }
 }
 
 # Grant Function App access to Storage Blob Data (for deployment & runtime)
