@@ -178,6 +178,7 @@ resource "azurerm_function_app_flex_consumption" "func" {
 
   app_settings = {
     "APPINSIGHTS_INSTRUMENTATIONKEY" = azurerm_application_insights.appinsights.instrumentation_key
+    "APPLICATIONINSIGHTS_CONNECTION_STRING" = azurerm_application_insights.appinsights.connection_string
     "AzureWebJobsStorage"            = azurerm_storage_account.sa.primary_connection_string
     # Connection String with Managed Identity
     "MSSQL_CONNECTION_STRING" = "Driver={ODBC Driver 18 for SQL Server};Server=${azurerm_mssql_server.sql.fully_qualified_domain_name};Database=${azurerm_mssql_database.db.name};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
