@@ -44,6 +44,18 @@ Required for the backend logic.
 2. Name: `rg-todo-manual` (or similar).
 3. Region: **East US 2** (or your preferred region).
 
+### 2. Virtual Network (VNet)
+1. Search for **Virtual Networks > Create**.
+2. **Resource Group:** `rg-todo-manual`.
+3. **Virtual network name:** `vnet-todo-manual`.
+4. **IP Address:** `10.0.0.0/16` (Default)
+5. **Subnets:** Create two distinct subnets:
+   - `snet-outbound`  
+     - Subnet address range: `10.0.0.0/24`  
+     - Subnet delegation: `Microsoft.App/environments`  
+   - `snet-private`  
+     - Subnet address range: `10.0.1.0/24`
+
 ### 2. SQL Database
 1. Search for **SQL Databases** > **Create**.
 2. **Resource Group:** `rg-todo-manual`.
@@ -51,10 +63,13 @@ Required for the backend logic.
 4. **Server:** Click **Create new**.
    - Server name: `sql-server-todo-unique` (must be globally unique).
    - Location: Same as Resource Group.
-   - Authentication: **Use SQL authentication**.
-   - Admin login: `sqladmin`.
+   - Authentication method: **Use both SQL and Microsoft Entra authentication**.
+   - Set Microsoft Entra admin: use your entra user.
+   - Server admin login: `sqladmin`.
    - Password: `YourStrongPassword123!`.
-5. **Networking:**
+5. **Workload environment:** Select **Development**.
+6. **Compute + storage:** **General Purpose - Serverless**.
+7. **Networking:**
    - **Allow Azure services and resources to access this server:** YES (Important!).
    - **Add current client IP address:** YES (For local access).
 6. **Pricing Tier:** Select **Basic** or **Free** (if available) to save costs.
@@ -138,4 +153,3 @@ Required for the backend logic.
 1. Open the URL provided by the SWA CLI output (or find it in the Azure Portal under your Static Web App).
 2. The app should load.
 3. Try adding a Todo item. If it appears, the frontend is successfully talking to the database via the Function App!
-
