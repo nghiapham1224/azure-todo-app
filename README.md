@@ -39,6 +39,37 @@ Required for the backend logic.
 
 ## Step 1: Create Azure Resources (Portal)
 
+### 1.1 Create the Resource Group
+The container for all your application components.
+
+* **Resource groups** > **Create**
+    * **Subscription:** (Select yours)
+    * **Resource group:** `rg-todo-manual`
+    * **Region:** `East US 2`
+* Click **Review + create** > **Create**
+
+### 1.2 Create the Virtual Network
+This provides the private network layer and connectivity for your app components.
+
+* **Virtual networks** > **Create**
+    * **Resource Group:** `rg-todo-manual`
+    * **Name:** `vnet-todo-manual`
+    * **Region:** `East US 2`
+* **IP Addresses** tab:
+    * **IPv4 address space:** `10.0.0.0/16`
+    * **Subnets** > **+ Add subnet**:
+        1. **Outbound Subnet (for Functions):**
+            * **Name:** `snet-outbound`
+            * **Starting address:** `10.0.1.0`
+            * **Size:** `/24`
+            * **Delegate subnet to a service:** `Microsoft.App/environments`
+            * Click **Add**
+        2. **Private Subnet (for Data):**
+            * **Name:** `snet-private`
+            * **Starting address:** `10.0.2.0`
+            * **Size:** `/24`
+            * Click **Add**
+* Click **Review + create** > **Create**
 
 ---
 
