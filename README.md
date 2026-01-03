@@ -1,3 +1,4 @@
+
 # Azure Todo App (Manual Setup Guide)
 
 This branch contains the simplified version of the Todo App, designed to be deployed manually via the Azure Portal and CLI tools. It separates the frontend (Static Web App) and backend (Azure Functions + SQL Database).
@@ -39,37 +40,160 @@ Required for the backend logic.
 
 ## Step 1: Create Azure Resources (Portal)
 
-### 1.1 Create the Resource Group
+### 1.1 Resource Group
 The container for all your application components.
 
-* **Resource groups** > **Create**
-    * **Subscription:** (Select yours)
-    * **Resource group:** `rg-todo-manual`
-    * **Region:** `East US 2`
-* Click **Review + create** > **Create**
+* Subscription: *{your subscription}*
+* Resource group name: `rg-todo-manual`
+* Region: **East US 2** *(or your preferred region)*
 
-### 1.2 Create the Virtual Network
+### 1.2 Virtual Network
 This provides the private network layer and connectivity for your app components.
 
-* **Virtual networks** > **Create**
-    * **Resource Group:** `rg-todo-manual`
-    * **Name:** `vnet-todo-manual`
-    * **Region:** `East US 2`
-* **IP Addresses** tab:
-    * **IPv4 address space:** `10.0.0.0/16`
-    * **Subnets** > **+ Add subnet**:
-        1. **Outbound Subnet (for Functions):**
-            * **Name:** `snet-outbound`
-            * **Starting address:** `10.0.1.0`
-            * **Size:** `/24`
-            * **Delegate subnet to a service:** `Microsoft.App/environments`
-            * Click **Add**
-        2. **Private Subnet (for Data):**
-            * **Name:** `snet-private`
-            * **Starting address:** `10.0.2.0`
-            * **Size:** `/24`
-            * Click **Add**
-* Click **Review + create** > **Create**
+* Basics:
+	* Resource group: **rg-todo-manual**
+	* Virtual network name: `vnet-todo-manual`
+	* Region: **East US 2**
+* IP addresses:
+    * IPv4 address space: `10.0.0.0/16`
+    * Subnets:
+        1. *Outbound Subnet (for Functions):*
+            * Name: `snet-outbound`
+            * Starting address: `10.0.0.0`
+            * Size: `/24`
+            * Delegate subnet to a service: **Microsoft.App/environments**
+        2. *Private Subnet (for Data):*
+            * Name: `snet-private`
+            * Starting address: `10.0.1.0`
+            * Size: `/24`
+            *  Enable private subnet: **checked**
+  
+### 1.3  SQL Database
+
+* Resource group: **rg-todo-manual**
+* Database  name: `TodoDB`
+* Server: **Create new**
+	* Server  name: `sql-todo-manual` *(must be globally unique)*
+	* Location: **East US 2**
+	* Authentication method: **Use both SQL and Microsoft Entra authentication**
+	* Set Microsoft Entra admin: *{select your Entra user account}*
+	* Server admin login: `sqladmin`
+	* Password: `YourVeryStrongPassword123`
+* Workload environment: **Development**
+* Compute + storage: **General Purpose - Serverless**
+
+### 1.4  Log Analytics Workspace
+
+* Subscription: *{your subscription}*
+* Resource group name: **rg-todo-manual**
+* Name: `law-todo-manual`
+* Region: **East US 2**
+
+### 1.5 Function App
+
+**Martketplace > Function App > Create Function App (Flex Consumption):**
+* Basics:
+	* Resource group: **rg-todo-manual**
+	* Function App name: `func-todo-manual` *(must be globally unique)*
+	*  Region: **East US 2**
+	*  Runtime stack: **Python**
+	* Version: **3.13**
+	* Instance size: **2048 MB**
+* Storage:
+	* Storage account: **Create new** 
+		* Name: `satodomanual` *(must be globally unique)*
+* Networking:
+	* Enable public access: **On**
+	* Enable virtual network integration: **On**
+		* Virtual Network: **vnet-todo-manual**
+		* Outbound access > Enable VNet integration: **On**
+			* Outbound subnet: **snet-outbound**
+		* Storage networking > Storage public network access: **Enable public access from all networks** *(we will disable this and configure private network endpoint later)*
+* Monitoring:
+	* Enable Application Insights: **Yes**
+	* Application Insights: **Create new**
+		* Name: `insight-todo-manual`
+		* Location: **East US 2**
+		* Workspace: **law-todo-manual**
+* Deployment:
+	* Continuous deployment: **Disable**
+	* Authentication settings > Basic authentication: **Enable**
+* Authentication:
+	* Resource authentication:
+		* Host storage (AzureWebJobsStorage) > **Managed Identity**
+		* Deployment storage > **Managed Identity**
+		* Application Insights > **Managed Identity**
+	* Managed identity: **System-assigned managed identity**
+
+### 1.7 Private Endpoints
+
+**sql-todo-manual  > Networking > Private access > Create a private endpoint:**
+* Basics:
+	* Resource group: **rg-todo-manual**
+	* Name: `pe-sql`
+	* Network Interface Name:  `pe-sql-nic`
+	* Region: **East US 2**
+* Resource:
+	* Resource type: **Microsoft.Sql/servers**
+	* Resource: **sql-todo-manual**
+	* Target sub-resource: **sqlServer**
+* Virtual Network:
+	* Virtual network: **vnet-todo-manual**
+	* Subnet: **snet-private**
+* DNS:
+	* Integrate with private DNS zone: **Yes**
+		* Configuration name: **privatelink-database-windows-net**
+		* Subscription: *{Your subscription}*
+		* Resource group: **rg-todo-manual**
+		* Private DNS zone: **(new) privatelink.database.windows.net**
+
+**satodomanual > Networking > Private endpoints > Create a private endpoint:**
+* Basics:
+	* Resource group: **rg-todo-manual**
+	* Name: `pe-storage`
+	* Network Interface Name:  `pe-storage-nic`
+	* Region: **East US 2**
+* Resource:
+	* Resource type: **  Microsoft.Storage/storageAccounts**
+	* Resource: **satodomanual**
+	* Target sub-resource: **blob**
+* Virtual Network:
+	* Virtual network: **vnet-todo-manual**
+	* Subnet: **snet-private**
+* DNS:
+	* Integrate with private DNS zone: **Yes**
+		* Configuration name: **privatelink-blob-windows-net**
+		* Subscription: *{Your subscription}*
+		* Resource group: **rg-todo-manual**
+		* Private DNS zone: **(new) privatelink.blob.core.windows.net**
+
+**satodomanual > Security * networking > Networking > Public access:**
+* Public network access > Manage: **Disable***
+
+**satodomanual > Settings > Configurations:**
+* Allow Blob anonymous access: **Disable**
+
+### 1.8 Static Web App
+
+* Basics:
+	* Resource group: **rg-todo-manual**
+	* Name: `swa-todo-manual`
+	* Plan type: **Free**
+	* Deployment details > Source: **Other**
+* Deployment configuration:
+	* Deployment authorization policy: **Deployment token**
+* Advanced:
+	* Region for Azure Functions API and staging environments: **East US 2**
+
+---
+
+## Step 2: Grant Database Access to Function App Managed Identity
+
+1. **Enable Managed Identity on the Function App**
+	* Go to your Function App **func-todo-manual** in the portal.
+	* Under **Settings**, click **Identity**.
+	* Under **System assigned**, ensure the **Status** is **On**.
+2. 
 
 ---
 
