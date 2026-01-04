@@ -1,16 +1,22 @@
 
+
 # Azure Todo App (Manual Setup Guide)
 
 This branch contains the simplified version of the Todo App, designed to be deployed manually via the Azure Portal and CLI tools. It separates the frontend (Static Web App) and backend (Azure Functions + SQL Database).
 
+---
+
 ## Prerequisites
 
-Before starting, ensure you have the following installed on your local machine:
+Before starting, ensure you have the following installed on your local machine.
+
+> [!TIP] **Windows Users:** For the best experience with the Azure CLI and shell commands used in this guide, it is highly recommended to install and use **Windows Subsystem for Linux (WSL)**. This allows you to run a native Linux environment (like Ubuntu) directly on Windows.
+**Install:** Open PowerShell as Administrator and run `wsl --install`.
 
 ### 1. Azure CLI
 Used to manage Azure resources from the command line.
 - **Install:** [Install Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
-- **Login:** Run `az login`
+- **Verify:** Run `az --version`
 
 ### 2. Node.js & npm
 Required for the Static Web Apps CLI and frontend tools.
@@ -189,67 +195,153 @@ This provides the private network layer and connectivity for your app components
 
 ## Step 2: Grant Database Access to Function App Managed Identity
 
-1. **Enable Managed Identity on the Function App**
-	* Go to your Function App **func-todo-manual** in the portal.
-	* Under **Settings**, click **Identity**.
-	* Under **System assigned**, ensure the **Status** is **On**.
-2. 
+### 1. Enable Managed Identity on the Function App 
+1. In the Azure Portal, navigate to **func-todo-manual**. 
+2. Under **Settings** in the left menu, select **Identity**.
+3. In the **System assigned** tab, ensure **Status** is toggled to **On**.
+4. Click **Save** and confirm (this allows the app to authenticate with other Azure services).
+
+### 2. Configure SQL Server Networking 
+To run the SQL scripts in the next step from your local machine, you must allow your IP address through the firewall.
+1. Navigate to **sql-todo-manual** > **Security** > **Networking**.
+2. Set **Public network access** to **Selected networks**.
+3. Under **Firewall rules**, click **Add your client IPv4 address**.
+4. Click **Save**.
+
+### 3. Grant SQL Permissions via Query Editor
+1. Navigate to **sql-todo-manual** > **SQL databases** > **TodoDB**.
+2. Select **Query editor (preview)** from the left menu.
+3. Login using either: 
+	- **SQL server authentication**: Use your server admin username and password. 
+	- **Microsoft Entra authentication**: Use your Entra user account (if you are the admin). 
+4. Run the following SQL script to create the user and grant permissions (replace `func-todo-manual` with your actual Function App name if different):
+
+	```sql
+	-- 1. Create a user in the database for the Function App
+	CREATE  USER [func-todo-manual] FROM  EXTERNAL  PROVIDER;
+	-- 2. Grant the user read/write permissions
+	ALTER  ROLE db_datareader ADD  MEMBER [func-todo-manual];
+	ALTER  ROLE db_datawriter ADD  MEMBER [func-todo-manual];
+	ALTER  ROLE db_ddladmin ADD  MEMBER [func-todo-manual]; -- Required if your app creates tables automatically
+	GO
+	```
+5. Run the following script to verify the identity has been added to the roles correctly:
+
+	```sql
+	SELECT
+		dp.name  AS DatabaseRole,
+		mp.name  AS MemberName,
+		mp.type_desc AS MemberType
+	FROM sys.database_role_members drm
+	JOIN sys.database_principals dp ON drm.role_principal_id = dp.principal_id
+	JOIN sys.database_principals mp ON drm.member_principal_id = mp.principal_id
+	ORDER  BY dp.name;
+	```
 
 ---
 
-## Step 2: Configure Backend (Function App)
+## Step 3: Configure Backend (Function App)
 
-1. **Get SQL Connection String:**
-   - Go to your SQL Database resource.
-   - Click **Connection strings**.
-   - Copy the `ADO.NET` (SQL authentication) string.
-   - Replace `{your_password}` with the password you created earlier.
+1. **Obtain the Base SQL Database Connection String**
+	- Navigate to **sql-todo-manual** > **SQL databases** > **TodoDB** > **Connection strings**.
+	- Select the **ODBC** tab. 
+	- Copy the connection string for **ODBC (Includes Node.js) (Microsoft Entra integrated authentication)**.
+		> *Note: We use this string as a template because it already contains the correct server and database parameters.*
+	
+2. **Modify the Connection String for Managed Identity**
+The default string uses `Authentication=ActiveDirectoryIntegrated`. Since the Function App uses its own **System-Assigned Managed Identity**, you must change the authentication parameter to **`Authentication=ActiveDirectoryMsi`**.
+	> Driver={ODBC Driver 18 for SQL Server};Server=tcp:sql-todo-manual.database.windows.net,1433;Database=TodoDB;Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;
+	
+3. **Apply the configuration via Azure CLI**
+The backend Python code is designed to look for an environment variable named `MSSQL_CONNECTION_STRING`. Run the following command to add this to your Function App's Application Settings:
+	```bash
+	az login 
+	az functionapp config appsettings set --name func-todo-manual --resource-group rg-todo-manual --settings "MSSQL_CONNECTION_STRING=Driver={ODBC Driver 18 for SQL Server};Server=tcp:sql-todo-manual.database.windows.net,1433;Database=TodoDB;Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
+	```
 
-2. **Add Setting to Function App:**
-   - Go to your Function App resource.
-   - Click **Settings** > **Environment variables**.
-   - Add a new App Setting:
-     - Name: `MSSQL_CONNECTION_STRING`
-     - Value: `<Your connection string>`
-   - Click **Apply**.
+4. **Deploy Backend Code**
+Choose **one** of the two methods below to deploy your code to Azure. 
 
-3. **Deploy Backend Code:**
-   - Open your terminal in the project root.
-   - Run:
-     ```bash
-     func azure functionapp publish func-todo-manual
-     ```
-   - Wait for the deployment to finish.
-
-4. **Enable CORS:**
-   - The SWA needs permission to talk to the Function App.
-   - Go to the Function App > **CORS**.
-   - Add the URL of your Static Web App (e.g., `https://agreeable-glacier-123.azurestaticapps.net`).
-   - Click **Save**.
-
----
-
-## Step 3: Configure Frontend (Static Web App)
-
-1. **Update API URL:**
-   - Open `templates/index.html`.
-   - Find the line `let API_URL = ...`.
-   - Replace it with your actual Function App URL:
-     ```javascript
-     let API_URL = "https://func-todo-manual.azurewebsites.net/api/todos";
-     ```
-
-2. **Deploy Frontend:**
-   - Run the SWA CLI deploy command:
-     ```bash
-     swa deploy ./templates --env production --deployment-token <YOUR_SWA_DEPLOYMENT_TOKEN>
-     ```
-   - Use the token you copied in Step 1.4.
+	#### Option A: Azure CLI (Zip Deploy) 
+	This method is useful if you don't have the Azure Functions Core Tools installed. It zips the essential files and pushes them to Azure for a remote build. 
+	
+	```bash 
+	# 1. Create the zip archive of essential files 
+	zip zipdeploy.zip function_app.py host.json requirements.txt 
+	# 2. Deploy the zip file 
+	az functionapp deployment source config-zip --resource-group rg-todo-manual --name func-todo-manual --src zipdeploy.zip --build-remote true
+	```
+	#### Option B: Azure Functions Core Tools
+	This is the recommended method for developers. It handles the packaging and deployment in a single command.
+	```bash
+	func azure functionapp publish func-todo-manual
+	```
 
 ---
 
-## Step 4: Verify
+## Step 4: Enable CORS (Cross-Origin Resource Sharing)
 
-1. Open the URL provided by the SWA CLI output (or find it in the Azure Portal under your Static Web App).
-2. The app should load.
-3. Try adding a Todo item. If it appears, the frontend is successfully talking to the database via the Function App!
+The Static Web App (Frontend) needs explicit permission to make API calls to the Function App (Backend).
+
+1. **Copy the Static Web App URL**
+   - Go to the Azure Portal and navigate to your Static Web App: **swa-todo-manual**.
+   - From the **Overview** blade, copy the **URL** (e.g., `https://blue-sea-084c5a90f.2.azurestaticapps.net`).
+
+2. **Configure CORS in the Function App**
+   - Navigate to your Function App: **func-todo-manual**.
+   - Under the **API** section in the left-hand menu, select **CORS**.
+   - Under **Allowed Origins**, add the URL you copied from the Static Web App.
+
+   > Ensure the URL **does not** have a trailing slash at the end (e.g., use `https://...net` instead of `https://...net/`).
+
+3. **Save Changes**
+
+---
+
+## Step 5: Configure Frontend (Static Web App)
+
+### 1. Update the API Endpoint
+The frontend needs to know where to send requests. You must update the URL in your HTML file to point to your live Azure Function.
+
+1. Open `templates/index.html`.
+2. Locate the line where `API_URL` is defined  (around line 134).
+3. Replace it with your actual Function App URL:
+	```javascript
+    let API_URL = "https://func-todo-manual.azurewebsites.net/api/todos";
+	```
+    > [!TIP]
+    > Make sure to include the `/api/todos` path suffix if that is how your function route is defined in your Python code.
+
+### 2. Deploy Frontend via SWA CLI
+To deploy the static files, you will retrieve your deployment token from Azure and then use the Static Web Apps (SWA) CLI to push the content.
+
+1. Open your terminal in the project root.
+2. Run the following commands to fetch the secret and deploy the `./templates` folder:
+	```bash
+	# 1. Fetch the deployment token
+	DEPLOYMENT_TOKEN=$(az staticwebapp secrets list --name swa-todo-manual --resource-group rg-todo-manual --query "properties.apiKey" --output tsv)
+	# 2. Deploy the frontend content
+	swa deploy ./templates --env production --deployment-token $DEPLOYMENT_TOKEN
+	```
+
+---
+
+## Step 6: Initialize and Verify
+Since this is a manual setup, the SQL tables must be created before the application can store data. We will trigger the initialization endpoint manually.
+
+### 1. Initialize the Database
+Run the following `curl` command (or paste the URL into your browser) to trigger the database schema creation.
+
+```bash
+curl -X POST https://func-todo-manual.azurewebsites.net/api/init
+```
+**Success Message:** You should see `"Database initialized successfully."` If you get an error, double-check that your Managed Identity permissions (Step 2) were applied correctly.
+
+> Since you are doing this manually, it's worth mentioning that the `/api/init` function is a "one-time" task. In a professional CI/CD pipeline, this would usually be handled by a "Post-deployment" script.
+
+### 2. Verify via the Browser
+
+1. Open the URL provided by the SWA CLI output (or find it in the Azure Portal under your Static Web App Overview).
+2. Once the app loads, try adding a new Todo item.
+3. **Validation:** * If the item appears in the list, the **Frontend** is successfully talking to the **Function App**, and the Function App is successfully communicating with **Azure SQL**.
+> If it fails, check the **Browser Console (F12)** for CORS errors or the **Function App Logs** for database connection issues.

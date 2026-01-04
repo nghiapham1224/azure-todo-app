@@ -10,9 +10,17 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 def get_db_connection():
     # Use the connection string from local.settings.json
-    conn_str = os.environ["MSSQL_CONNECTION_STRING"]
-    conn = pyodbc.connect(conn_str)
-    return conn
+    try:
+        conn_str = os.environ["MSSQL_CONNECTION_STRING"]
+        logging.info(f"Retrieved MSSQL_CONNECTION_STRING (length: {len(conn_str)})")
+        conn = pyodbc.connect(conn_str)
+        return conn
+    except KeyError:
+        logging.error("MSSQL_CONNECTION_STRING environment variable not found.")
+        raise
+    except Exception as e:
+        logging.error(f"Error connecting to DB with connection string: {str(e)}")
+        raise
 
 
 def init_db():
@@ -42,12 +50,22 @@ def health_check(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Health check triggered.")
     return func.HttpResponse("Azure Function is up and running.", status_code=200)
 
+# Init DB endpoint
+@app.route(route="init", methods=["POST"])
+def init(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Initializing database...")
+    try:
+        init_db()
+        return func.HttpResponse("Database initialized successfully.", status_code=200)
+    except Exception as e:
+        logging.error(f"Failed to initialize database via /api/init: {str(e)}")
+        return func.HttpResponse(f"Failed to initialize database: {str(e)}", status_code=500)
+
 
 # GET all todos
 @app.route(route="todos", methods=["GET"])
 def get_todos(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing todos request.")
-    init_db()  # Ensure table exists
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -77,7 +95,6 @@ def get_todos(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="todos/{id}", methods=["GET"])
 def get_todo_id(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing GET todo by ID.")
-    init_db()
     try:
         todo_id = req.route_params.get("id")
         if not todo_id:
@@ -113,7 +130,6 @@ def get_todo_id(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="todos", methods=["POST"])
 def add_todo(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing todos request (POST).")
-    init_db()
     try:
         req_body = req.get_json()
         title = req_body.get("title")
@@ -161,7 +177,6 @@ def add_todo(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="todos/{id}", methods=["PUT"])
 def update_todo(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing todo update request (PUT).")
-    init_db()
     try:
         todo_id = req.route_params.get("id")
         if not todo_id:
@@ -237,8 +252,6 @@ def update_todo(req: func.HttpRequest) -> func.HttpResponse:
 @app.route(route="todos/{id}", methods=["DELETE"])
 def delete_todo(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Processing todo delete request (DELETE)")
-    init_db()
-    init_db()
     try:
         todo_id = req.route_params.get("id")
         if not todo_id:
