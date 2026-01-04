@@ -1,8 +1,8 @@
-
-
 # Azure Todo App (Manual Setup Guide)
 
 This branch contains the simplified version of the Todo App, designed to be deployed manually via the Azure Portal and CLI tools. It separates the frontend (Static Web App) and backend (Azure Functions + SQL Database).
+
+![My Diagram](diagram.svg)
 
 ---
 
