@@ -160,7 +160,7 @@ This provides the private network layer and connectivity for your app components
 	* Network Interface Name:  `pe-storage-nic`
 	* Region: **East US 2**
 * Resource:
-	* Resource type: **  Microsoft.Storage/storageAccounts**
+	* Resource type: **Microsoft.Storage/storageAccounts**
 	* Resource: **satodomanual**
 	* Target sub-resource: **blob**
 * Virtual Network:
@@ -174,7 +174,7 @@ This provides the private network layer and connectivity for your app components
 		* Private DNS zone: **(new) privatelink.blob.core.windows.net**
 
 **satodomanual > Security * networking > Networking > Public access:**
-* Public network access > Manage: **Disable***
+* Public network access > Manage: **Disable**
 
 **satodomanual > Settings > Configurations:**
 * Allow Blob anonymous access: **Disable**
@@ -246,11 +246,13 @@ To run the SQL scripts in the next step from your local machine, you must allow 
 	- Navigate to **sql-todo-manual** > **SQL databases** > **TodoDB** > **Connection strings**.
 	- Select the **ODBC** tab. 
 	- Copy the connection string for **ODBC (Includes Node.js) (Microsoft Entra integrated authentication)**.
-		> *Note: We use this string as a template because it already contains the correct server and database parameters.*
+	> *Note: We use this string as a template because it already contains the correct server and database parameters.*
 	
 2. **Modify the Connection String for Managed Identity**
+
 The default string uses `Authentication=ActiveDirectoryIntegrated`. Since the Function App uses its own **System-Assigned Managed Identity**, you must change the authentication parameter to **`Authentication=ActiveDirectoryMsi`**.
-	> Driver={ODBC Driver 18 for SQL Server};Server=tcp:sql-todo-manual.database.windows.net,1433;Database=TodoDB;Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;
+
+> Driver={ODBC Driver 18 for SQL Server};Server=tcp:sql-todo-manual.database.windows.net,1433;Database=TodoDB;Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;
 	
 3. **Apply the configuration via Azure CLI**
 The backend Python code is designed to look for an environment variable named `MSSQL_CONNECTION_STRING`. Run the following command to add this to your Function App's Application Settings:
