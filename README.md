@@ -250,12 +250,16 @@ To run the SQL scripts in the next step from your local machine, you must allow 
 	
 2. **Modify the Connection String for Managed Identity**
 
-The default string uses `Authentication=ActiveDirectoryIntegrated`. Since the Function App uses its own **System-Assigned Managed Identity**, you must change the authentication parameter to **`Authentication=ActiveDirectoryMsi`**.
+	The default string uses `Authentication=ActiveDirectoryIntegrated`. Since the Function App uses its own **System-Assigned Managed Identity**, you must change the authentication parameter to **`Authentication=ActiveDirectoryMsi`**.
 
-> Driver={ODBC Driver 18 for SQL Server};Server=tcp:sql-todo-manual.database.windows.net,1433;Database=TodoDB;Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;
+	Modify the string to use Managed Identity (MSI) so the Function App can authenticate without a password:
+	* **Find:** `Authentication=ActiveDirectoryIntegrated`
+	* **Replace with:** `Authentication=ActiveDirectoryMsi`
+	> Driver={ODBC Driver 18 for SQL Server};Server=tcp:sql-todo-manual.database.windows.net,1433;Database=TodoDB;Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;
 	
 3. **Apply the configuration via Azure CLI**
-The backend Python code is designed to look for an environment variable named `MSSQL_CONNECTION_STRING`. Run the following command to add this to your Function App's Application Settings:
+
+	The backend Python code is designed to look for an environment variable named `MSSQL_CONNECTION_STRING`. Run the following command to add this to your Function App's Application Settings:
 	```bash
 	az login 
 	az functionapp config appsettings set --name func-todo-manual --resource-group rg-todo-manual --settings "MSSQL_CONNECTION_STRING=Driver={ODBC Driver 18 for SQL Server};Server=tcp:sql-todo-manual.database.windows.net,1433;Database=TodoDB;Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
