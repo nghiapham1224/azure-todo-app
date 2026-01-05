@@ -173,7 +173,7 @@ This provides the private network layer and connectivity for your app components
 		* Resource group: **rg-todo-manual**
 		* Private DNS zone: **(new) privatelink.blob.core.windows.net**
 
-**satodomanual > Security * networking > Networking > Public access:**
+**satodomanual > Security > networking > Networking > Public access:**
 * Public network access > Manage: **Disable**
 
 **satodomanual > Settings > Configurations:**
@@ -349,5 +349,5 @@ curl -X POST https://func-todo-manual.azurewebsites.net/api/init
 
 1. Open the URL provided by the SWA CLI output (or find it in the Azure Portal under your Static Web App Overview).
 2. Once the app loads, try adding a new Todo item.
-3. **Validation:** * If the item appears in the list, the **Frontend** is successfully talking to the **Function App**, and the Function App is successfully communicating with **Azure SQL**.
+3. **Validation:** If the item appears in the list, the **Frontend** is successfully talking to the **Function App**, and the Function App is successfully communicating with **Azure SQL**.
 > If it fails, check the **Browser Console (F12)** for CORS errors or the **Function App Logs** for database connection issues.
