@@ -1,0 +1,41 @@
+resource "null_resource" "sql_init" {
+  depends_on = [
+    azurerm_mssql_database.db,
+    azurerm_mssql_firewall_rule.allow_local
+  ]
+
+  triggers = {
+    # Re-run if the function name changes
+    func_name = azurerm_function_app_flex_consumption.func.name
+  }
+
+  provisioner "local-exec" {
+    command = <<EOT
+      echo "Waiting 30 seconds for SQL Firewall rule to propagate..."
+      sleep 30
+
+      # Define the SQL command using variables directly from Terraform
+      SQL_COMMAND=$(cat <<EOF
+CREATE USER [${azurerm_function_app_flex_consumption.func.name}] FROM EXTERNAL PROVIDER;
+ALTER ROLE db_datareader ADD MEMBER [${azurerm_function_app_flex_consumption.func.name}];
+ALTER ROLE db_datawriter ADD MEMBER [${azurerm_function_app_flex_consumption.func.name}];
+ALTER ROLE db_ddladmin ADD MEMBER [${azurerm_function_app_flex_consumption.func.name}];
+EOF
+)
+
+      echo "Attempting to run SQL script for Function App: ${azurerm_function_app_flex_consumption.func.name}..."
+
+      # Use -Q to execute the string.
+      # Note: We added -C to trust the server certificate (common for modern sqlcmd/ODBC 18)
+      if sqlcmd -S ${azurerm_mssql_server.sql.fully_qualified_domain_name} \
+                -d ${azurerm_mssql_database.db.name} \
+                --authentication-method ActiveDirectoryDefault \
+                -C -Q "$SQL_COMMAND"; then
+          echo "SQL script executed successfully."
+      else
+          echo "ERROR: Failed to execute SQL commands."
+          exit 1
+      fi
+    EOT
+  }
+}
