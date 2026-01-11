@@ -8,9 +8,3 @@ resource "azurerm_resource_group" "rg" {
 resource "random_id" "unique" {
   byte_length = 4
 }
-
-# Key Vault
-data "azurerm_key_vault" "kv" {
-  name                = "terraform-kv-01"
-  resource_group_name = "terraform-state-rg"
-}

@@ -34,6 +34,12 @@ resource "azurerm_private_endpoint" "pe_storage" {
   }
 }
 
+# Key Vault
+data "azurerm_key_vault" "kv" {
+  name                = "terraform-kv-01"
+  resource_group_name = "terraform-state-rg"
+}
+
 # SQL Admin Password
 data "azurerm_key_vault_secret" "sql_password" {
   name         = "sql-password"

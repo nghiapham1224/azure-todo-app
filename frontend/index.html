@@ -129,40 +129,49 @@
         </div>
 
         <script>
-            // Placeholder: The CI/CD pipeline will replace '__BACKEND_API_URL__' with the real Azure URL.
-            // If running locally, it remains '__BACKEND_API_URL__', so we fallback to localhost.
-            let API_URL = "https://func-todo-manual.azurewebsites.net/api/todos";
-            if (API_URL === "__BACKEND_API_URL__") {
-                API_URL = "http://localhost:7071/api/todos";
+            // Note: During deployment, you can replace this URL with your actual Azure Function URL.
+            // For local development, it defaults to localhost.
+            let API_URL = "http://localhost:7071/api/todos";
+            
+            // Check if we are running in a known environment or if a global config object exists
+            if (window.env && window.env.API_URL) {
+                API_URL = window.env.API_URL;
             }
 
             async function loadTodos() {
-                const response = await fetch(API_URL);
-                const todos = await response.json();
+                try {
+                    const response = await fetch(API_URL);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const todos = await response.json();
 
-                const list = document.getElementById("todoList");
-                list.innerHTML = "";
+                    const list = document.getElementById("todoList");
+                    list.innerHTML = "";
 
-                todos.forEach((todo) => {
-                    // Simple date formatting
-                    const date = new Date(todo.created_time).toLocaleString();
+                    todos.forEach((todo) => {
+                        // Simple date formatting
+                        const date = new Date(todo.created_time).toLocaleString();
 
-                    list.innerHTML += `
-                    <li class="todo-item ${todo.completed ? "completed" : ""}">
-                        <input type="checkbox"
-                               ${todo.completed ? "checked" : ""}
-                               onclick="toggleTodo(${todo.id}, ${todo.completed})">
+                        list.innerHTML += `
+                        <li class="todo-item ${todo.completed ? "completed" : ""}">
+                            <input type="checkbox"
+                                   ${todo.completed ? "checked" : ""}
+                                   onclick="toggleTodo(${todo.id}, ${todo.completed})">
 
-                        <div class="todo-content">
-                            <h3>${todo.title}</h3>
-                            <p>${todo.description || ""}</p>
-                            <small>Created: ${date}</small>
-                        </div>
+                            <div class="todo-content">
+                                <h3>${todo.title}</h3>
+                                <p>${todo.description || ""}</p>
+                                <small>Created: ${date}</small>
+                            </div>
 
-                        <button class="delete-btn" onclick="deleteTodo(${todo.id})">Delete</button>
-                    </li>
-                `;
-                });
+                            <button class="delete-btn" onclick="deleteTodo(${todo.id})">Delete</button>
+                        </li>
+                    `;
+                    });
+                } catch (error) {
+                    console.error("Failed to load todos:", error);
+                }
             }
 
             async function addTodo() {
@@ -171,32 +180,44 @@
 
                 if (!title.value) return;
 
-                await fetch(API_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        title: title.value,
-                        description: desc.value,
-                    }),
-                });
+                try {
+                    await fetch(API_URL, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            title: title.value,
+                            description: desc.value,
+                        }),
+                    });
 
-                title.value = "";
-                desc.value = "";
-                loadTodos();
+                    title.value = "";
+                    desc.value = "";
+                    loadTodos();
+                } catch (error) {
+                    console.error("Failed to add todo:", error);
+                }
             }
 
             async function toggleTodo(id, currentStatus) {
-                await fetch(`${API_URL}/${id}`, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ completed: !currentStatus }),
-                });
-                loadTodos();
+                try {
+                    await fetch(`${API_URL}/${id}`, {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ completed: !currentStatus }),
+                    });
+                    loadTodos();
+                } catch (error) {
+                    console.error("Failed to toggle todo:", error);
+                }
             }
 
             async function deleteTodo(id) {
-                await fetch(`${API_URL}/${id}`, { method: "DELETE" });
-                loadTodos();
+                try {
+                    await fetch(`${API_URL}/${id}`, { method: "DELETE" });
+                    loadTodos();
+                } catch (error) {
+                    console.error("Failed to delete todo:", error);
+                }
             }
 
             loadTodos();

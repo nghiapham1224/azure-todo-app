@@ -1,0 +1,8 @@
+# Required Variables
+subscription_id              = "YOUR_AZURE_SUBSCRIPTION_ID"
+aad_admin_object_id          = "YOUR_AZURE_AD_USER_OBJECT_ID"
+
+# Optional Variables (Uncomment to override defaults in variables.tf)
+# prefix      = "todo"
+# environment = "dev"
+# location    = "eastus2"
