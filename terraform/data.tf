@@ -47,9 +47,9 @@ data "azurerm_key_vault_secret" "sql_password" {
 }
 
 # Get current public IP for SQL firewall
-data "http" "myip" {
-  url = "https://ipv4.icanhazip.com"
-}
+# data "http" "myip" {
+#   url = "https://ipv4.icanhazip.com"
+# }
 
 # SQL Server
 resource "azurerm_mssql_server" "sql" {
@@ -57,7 +57,7 @@ resource "azurerm_mssql_server" "sql" {
   resource_group_name           = azurerm_resource_group.rg.name
   location                      = azurerm_resource_group.rg.location
   version                       = "12.0"
-  public_network_access_enabled = true
+  public_network_access_enabled = false
   administrator_login           = "sqladmin"
   administrator_login_password  = data.azurerm_key_vault_secret.sql_password.value
   azuread_administrator {
@@ -67,12 +67,12 @@ resource "azurerm_mssql_server" "sql" {
 }
 
 # SQL Firewall Rule (Allow local machine)
-resource "azurerm_mssql_firewall_rule" "allow_local" {
-  name             = "AllowLocalIP"
-  server_id        = azurerm_mssql_server.sql.id
-  start_ip_address = chomp(data.http.myip.response_body)
-  end_ip_address   = chomp(data.http.myip.response_body)
-}
+# resource "azurerm_mssql_firewall_rule" "allow_local" {
+#   name             = "AllowLocalIP"
+#   server_id        = azurerm_mssql_server.sql.id
+#   start_ip_address = chomp(data.http.myip.response_body)
+#   end_ip_address   = chomp(data.http.myip.response_body)
+# }
 
 # SQL Database
 resource "azurerm_mssql_database" "db" {

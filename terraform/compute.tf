@@ -32,7 +32,7 @@ resource "azurerm_function_app_flex_consumption" "func" {
   location                      = azurerm_resource_group.rg.location
   service_plan_id               = azurerm_service_plan.plan.id
   runtime_name                  = "python"
-  runtime_version               = "3.13"
+  runtime_version               = "3.11"
   storage_authentication_type   = "SystemAssignedIdentity"
   storage_container_type        = "blobContainer"
   storage_container_endpoint    = "${azurerm_storage_account.sa.primary_blob_endpoint}${azurerm_storage_container.deploy.name}"
@@ -45,8 +45,7 @@ resource "azurerm_function_app_flex_consumption" "func" {
     vnet_route_all_enabled = true # Necessary to reach Private Endpoints
     cors {
       allowed_origins = [
-        "https://portal.azure.com",
-        "https://${azurerm_static_web_app.frontend.default_host_name}"
+        "https://portal.azure.com"
       ]
     }
   }

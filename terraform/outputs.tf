@@ -18,6 +18,10 @@ output "swa_default_hostname" {
   value = azurerm_static_web_app.frontend.default_host_name
 }
 
+output "sql_server_name" {
+  value = azurerm_mssql_server.sql.name
+}
+
 output "sql_server_hostname" {
   value = azurerm_mssql_server.sql.fully_qualified_domain_name
 }
