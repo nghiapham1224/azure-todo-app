@@ -4,6 +4,11 @@ resource "azurerm_static_web_app" "frontend" {
   resource_group_name = azurerm_resource_group.rg.name
   location            = azurerm_resource_group.rg.location
   sku_tier            = "Free"
+  lifecycle {
+    ignore_changes = [
+      app_settings
+    ]
+  }
 }
 
 # Store Deployment Token in Key Vault

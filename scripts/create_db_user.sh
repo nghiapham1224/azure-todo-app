@@ -1,63 +1,58 @@
 #!/bin/bash
 
+# Color Defination
+CLR_INFO='\033[0;36m'   # Cyan
+CLR_OK='\033[0;32m'     # Green
+CLR_ERR='\033[0;31m'    # Red
+CLR_VAR='\033[1;33m'    # Bold Yellow
+NC='\033[0m'            # No Color
+
+# 1. Check Auth
 if ! az account show > /dev/null 2>/dev/null; then
-    echo "Not logged in. Running az login..."
+    echo -e "${CLR_INFO}[info]${NC} Not logged in. Running az login..."
     az login
 else
-    echo "Already logged in as: $(az account show --query user.name -o tsv)"
-    echo "Current subscription: $(az account show --query name -o tsv)"
+    echo -e "${CLR_OK}[ok]${NC} Logged in as: $(az account show --query user.name -o tsv)"
+    echo -e "${CLR_INFO}[info]${NC} Azure Subscription: $(az account show --query name -o tsv)"
 fi
 
-echo
-
-# Ensure we are in the project root
+# 2. Get Config
 cd "$(dirname "$0")/.."
-echo "Current dir: $(pwd)"
+echo -e "${CLR_INFO}[info]${NC} Fetching Terraform outputs..."
 
-echo
-
-echo "Fetching configuration from Terraform..."
 RG_NAME=$(terraform -chdir=terraform output -raw resource_group_name)
 SQL_SERVER_NAME=$(terraform -chdir=terraform output -raw sql_server_name)
 SQL_SERVER_HOSTNAME=$(terraform -chdir=terraform output -raw sql_server_hostname)
 DB_NAME=$(terraform -chdir=terraform output -raw sql_database_name)
 FUNC_NAME=$(terraform -chdir=terraform output -raw function_app_name)
-
 MY_IP=$(curl -s https://ipv4.icanhazip.com)
 
-if [ -z "$SQL_SERVER_NAME" ] || [ -z "$SQL_SERVER_HOSTNAME" ] || [ -z "$DB_NAME" ] || [ -z "$FUNC_NAME" ]; then
-    echo "Error: Could not fetch configuration from Terraform outputs."
+echo -e "  ${NC}Resource Group: ${CLR_VAR}$RG_NAME"
+echo -e "  ${NC}SQL Server:     ${CLR_VAR}$SQL_SERVER_NAME"
+echo -e "  ${NC}Database:       ${CLR_VAR}$DB_NAME"
+echo -e "  ${NC}Function App:   ${CLR_VAR}$FUNC_NAME"
+echo -e "  ${NC}Local IP:       ${CLR_VAR}$MY_IP"
+
+if [ -z "$SQL_SERVER_NAME" ]; then
+    echo -e "${CLR_ERR}[error]${NC} Could not fetch Terraform outputs."
     exit 1
 fi
 
-echo
+# 3. Networking
+echo -e "${CLR_INFO}[info]${NC} Enabling public access for: ${CLR_VAR}$SQL_SERVER_NAME${NC}"
+az sql server update -g $RG_NAME -n $SQL_SERVER_NAME --set publicNetworkAccess="Enabled" > /dev/null
 
-echo "Enabling public access and firewall rule for $SQL_SERVER_NAME..."
-az sql server update --resource-group $RG_NAME --name $SQL_SERVER_NAME --set publicNetworkAccess="Enabled" > /dev/null
-echo "Adding firewall rule for $MY_IP..."
-az sql server firewall-rule create \
-    --resource-group $RG_NAME \
-    --server $SQL_SERVER_NAME \
-    --name AllowTempLocalIP \
-    --start-ip-address $MY_IP \
-    --end-ip-address $MY_IP > /dev/null
+echo -e "${CLR_INFO}[info]${NC} Adding firewall rule for IP: ${CLR_VAR}$MY_IP${NC}"
+az sql server firewall-rule create -g $RG_NAME -s $SQL_SERVER_NAME -n AllowTempLocalIP --start-ip-address $MY_IP --end-ip-address $MY_IP > /dev/null
 
-echo
-
-echo "Waiting 30 seconds for firewall propagation..."
+echo -ne "${CLR_INFO}[info]${NC} Waiting for propagation"
 for i in {1..30}; do
-    echo -ne ".   \r"; sleep 0.3
-    echo -ne "..  \r"; sleep 0.3
-    echo -ne "... \r"; sleep 0.4
+    echo -ne "."
+    sleep 1
 done
-echo "Done!"
+echo -e " Done!${NC}"
 
-echo
-
-echo "Assigning roles for Function App: $FUNC_NAME..."
-echo "Target Server: $SQL_SERVER_NAME"
-echo "Target Database: $DB_NAME"
-
+# 4. SQL Roles
 SQL_ROLE_ASSIGN=$(cat <<EOF
 SET NOCOUNT ON;
 IF NOT EXISTS (SELECT * FROM sys.database_principals WHERE name = '$FUNC_NAME')
@@ -70,17 +65,18 @@ ALTER ROLE db_ddladmin   ADD MEMBER [$FUNC_NAME];
 EOF
 )
 
-echo "Executing SQL via sqlcmd (using Azure AD authentication)..."
+echo -e "${CLR_INFO}[info]${NC} Assigning roles to: ${CLR_VAR}$FUNC_NAME${NC}"
 if sqlcmd -S "$SQL_SERVER_HOSTNAME" -d "$DB_NAME" -G -Q "$SQL_ROLE_ASSIGN"; then
-    echo "Roles assigned successfully"
+    echo -e "${CLR_OK}[ok]${NC} Roles assigned successfully."
 else
+    echo -e "${CLR_ERR}[error]${NC} SQL execution failed."
     exit 1
 fi
 
-echo
-
-echo "Verifying database role membership..."
+# 5. Verify
+echo -e "${CLR_INFO}[info]${NC} Verifying database role membership..."
 SQL_ROLE_CHECK=$(cat <<EOF
+SET NOCOUNT ON;
 SELECT
     dp.name  AS DatabaseRole,
     mp.name  AS MemberName,
@@ -90,12 +86,13 @@ JOIN sys.database_principals dp ON drm.role_principal_id = dp.principal_id
 JOIN sys.database_principals mp ON drm.member_principal_id = mp.principal_id
 WHERE mp.name = '$FUNC_NAME'
 ORDER BY dp.name;
-EOF)
+EOF
+)
 sqlcmd -S "$SQL_SERVER_HOSTNAME" -d "$DB_NAME" -G -Q "$SQL_ROLE_CHECK" -y 30 -Y 30
 
-echo
+# 6. Cleanup
+echo -e "${CLR_INFO}[info]${NC} Removing firewall rule and disabling public access..."
+az sql server firewall-rule delete -g $RG_NAME -s $SQL_SERVER_NAME -n AllowTempLocalIP > /dev/null
+az sql server update -g $RG_NAME -n $SQL_SERVER_NAME --set publicNetworkAccess="Disabled" > /dev/null
 
-echo "Removing firewall rule..."
-az sql server firewall-rule delete --resource-group $RG_NAME --server $SQL_SERVER_NAME --name AllowTempLocalIP > /dev/null
-echo "Disabling public network access..."
-az sql server update --resource-group $RG_NAME --name $SQL_SERVER_NAME --public-network-access Disabled > /dev/null
+echo -e "${CLR_OK}[ok]${NC} Cleanup complete."

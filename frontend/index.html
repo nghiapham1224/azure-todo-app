@@ -129,14 +129,13 @@
         </div>
 
         <script>
-            // Note: During deployment, you can replace this URL with your actual Azure Function URL.
-            // For local development, it defaults to localhost.
-            let API_URL = "http://localhost:7071/api/todos";
-            
-            // Check if we are running in a known environment or if a global config object exists
-            if (window.env && window.env.API_URL) {
-                API_URL = window.env.API_URL;
-            }
+            // API Configuration
+            // 1. Look for an injected global variable (e.g., from CI/CD replacement or a config.js)
+            // 2. Check window.env (common for some SWA patterns)
+            // 3. Fallback to local development URL
+            const API_URL = window.API_URL || 
+                           (window.env && window.env.API_URL) || 
+                           "http://localhost:7071/api/todos";
 
             async function loadTodos() {
                 try {

@@ -1,27 +1,29 @@
 #!/bin/bash
 
-# Ensure we are in the project root
+# Color Definiation
+CLR_INFO='\033[0;36m'
+CLR_OK='\033[0;32m'
+CLR_ERR='\033[0;31m'
+NC='\033[0m'
+
 cd "$(dirname "$0")/.."
 
-echo "Fetching configuration from Terraform..."
+echo -e "${CLR_INFO}[info]${NC} Fetching Function URL..."
 FUNC_URL=$(terraform -chdir=terraform output -raw function_app_url)
 
 if [ -z "$FUNC_URL" ]; then
-    echo "Error: Could not fetch function_app_url from Terraform outputs."
+    echo -e "${CLR_ERR}[error]${NC} Could not fetch function_app_url."
     exit 1
 fi
 
 INIT_URL="${FUNC_URL}/api/init"
 
-echo "Initializing database via: $INIT_URL"
-echo "Sending POST request..."
-
+echo -e "${CLR_INFO}[info]${NC} Calling: $INIT_URL"
 RESPONSE=$(curl -s -X POST "$INIT_URL")
 
 if [[ $RESPONSE == *"initialized"* ]]; then
-    echo "Success: $RESPONSE"
+    echo -e "${CLR_OK}[ok]${NC} Success: $RESPONSE"
 else
-    echo "Error or unexpected response: $RESPONSE"
-    echo "Check if the function app is deployed and running."
+    echo -e "${CLR_ERR}[error]${NC} Unexpected response: $RESPONSE"
     exit 1
 fi

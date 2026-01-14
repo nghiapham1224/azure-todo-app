@@ -45,9 +45,14 @@ resource "azurerm_function_app_flex_consumption" "func" {
     vnet_route_all_enabled = true # Necessary to reach Private Endpoints
     cors {
       allowed_origins = [
-        "https://portal.azure.com"
+        "https://portal.azure.com",
       ]
     }
+  }
+  lifecycle {
+    ignore_changes = [
+      site_config[0].cors
+    ]
   }
   app_settings = {
     "MSSQL_CONNECTION_STRING" = "Driver={ODBC Driver 18 for SQL Server};Server=tcp:${azurerm_mssql_server.sql.fully_qualified_domain_name},1433;Database=${azurerm_mssql_database.db.name};Authentication=ActiveDirectoryMsi;Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30;"
